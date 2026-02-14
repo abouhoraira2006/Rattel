@@ -108,10 +108,13 @@ export const setLastRead = async (
 ): Promise<void> => {
     if (!isStorageAvailable()) return;
     try {
+        const progress = Math.min(100, Math.max(0, (pageNumber / 604) * 100));
+
         await AsyncStorage.multiSet([
             [STORAGE_KEYS.LAST_READ_SURAH, surahNumber.toString()],
             [STORAGE_KEYS.LAST_READ_AYAH, ayahNumber.toString()],
             [STORAGE_KEYS.LAST_READ_PAGE, pageNumber.toString()],
+            [STORAGE_KEYS.READING_PROGRESS, progress.toFixed(2)],
         ]);
     } catch (error) {
         console.error('Error setting last read position:', error);

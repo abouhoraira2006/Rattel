@@ -20,6 +20,21 @@ const apiClient = axios.create({
     },
 });
 
+/**
+ * Normalizes Arabic text by removing diacritics (tashkeel)
+ * @param {string} text 
+ * @returns {string} Normalized text
+ */
+export const normalizeArabic = (text) => {
+    if (!text) return '';
+    return text
+        .replace(/[\u064B-\u0652\u0670\u0640]/g, '') // Remove tashkeel and tatweel
+        .replace(/[أإآ]/g, 'ا') // Normalize Alif
+        .replace(/ة/g, 'ه') // Normalize Teh Marbuta
+        .replace(/ى/g, 'ي') // Normalize Alif Maksura
+        .trim();
+};
+
 // Add response interceptor for error handling
 apiClient.interceptors.response.use(
     (response) => response.data,
@@ -80,6 +95,24 @@ export const fetchSurahWarsh = async (surahNumber) => {
     } catch (error) {
         console.error(`Error fetching Surah ${surahNumber}:`, error);
         throw new Error(`Failed to load Surah ${surahNumber}. Please try again.`);
+    }
+};
+
+/**
+ * Fetch the starting page number for a given Surah
+ * @param {number} surahNumber 
+ * @returns {number} Page number
+ */
+export const fetchSurahPage = async (surahNumber) => {
+    try {
+        const response = await apiClient.get(`/surah/${surahNumber}`);
+        if (response.data && response.data.ayahs && response.data.ayahs.length > 0) {
+            return response.data.ayahs[0].page;
+        }
+        return 1;
+    } catch (error) {
+        console.error('Error fetching surah page:', error);
+        return 1;
     }
 };
 
@@ -204,6 +237,61 @@ export const fetchPageMapping = async (pageNumber) => {
 };
 
 /**
+ * Search the Quran for a keyword using Quran.com API (v4)
+ * Much more robust for Arabic text search
+ * @param {string} keyword - The text to search for
+ * @returns {Promise<Array>} Search results with Surah and Ayah info
+ */
+export const searchQuran = async (keyword) => {
+    try {
+        const normalizedKeyword = normalizeArabic(keyword);
+        const response = await axios.get(`https://api.quran.com/api/v4/search?q=${encodeURIComponent(normalizedKeyword)}&language=ar&size=20`);
+
+        if (!response.data || !response.data.search || !response.data.search.results) return [];
+
+        // Fetch the full surah list once to get English names efficiently
+        const surahList = await fetchSurahList();
+
+        const searchResults = await Promise.all(response.data.search.results.map(async (result) => {
+            let page = 1;
+            let surahEnglishName = '';
+            const surahNumber = parseInt(result.verse_key.split(':')[0]);
+
+            // Find the English name from the pre-fetched list
+            const surahDetail = surahList.find(s => s.number === surahNumber);
+            if (surahDetail) {
+                surahEnglishName = surahDetail.englishName;
+            }
+
+            try {
+                // Fetch verse detail to get the page number for precise navigation
+                const detailResponse = await axios.get(`https://api.quran.com/api/v4/verses/by_key/${result.verse_key}?fields=page_number`);
+                page = detailResponse.data.verse.page_number;
+            } catch (pError) {
+                console.warn(`Could not fetch page for ${result.verse_key}`);
+            }
+
+            return {
+                text: result.text.replace(/<(?:.|\n)*?>/gm, ''), // Strip any HTML tags
+                ayahNumber: parseInt(result.verse_key.split(':')[1]),
+                surah: {
+                    number: parseInt(result.verse_key.split(':')[0]),
+                    name: result.surah_name || `سورة ${result.verse_key.split(':')[0]}`,
+                    englishName: '',
+                },
+                page: page,
+                verseKey: result.verse_key
+            };
+        }));
+
+        return searchResults;
+    } catch (error) {
+        console.error('Search Error:', error);
+        return [];
+    }
+};
+
+/**
  * Get a random daily Ayah
  * @returns {Promise<Object>} Random Ayah with text and metadata
  */
@@ -236,4 +324,6 @@ export default {
     getDailyAyah,
     fetchPageAyahs,
     fetchPageMapping,
+    fetchSurahPage,
+    searchQuran,
 };

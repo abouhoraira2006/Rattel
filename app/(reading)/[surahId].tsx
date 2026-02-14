@@ -7,8 +7,8 @@ import BottomSheet from '@gorhom/bottom-sheet';
 import { BlurView } from 'expo-blur';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowRight, Info, Share2 } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, Info } from 'lucide-react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
@@ -18,10 +18,18 @@ import {
     StyleSheet,
     Text,
     View,
-    ViewToken,
     useWindowDimensions
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import {
+    Gesture,
+    GestureDetector,
+    GestureHandlerRootView
+} from 'react-native-gesture-handler';
+import {
+    runOnJS,
+    useSharedValue,
+    withSpring
+} from 'react-native-reanimated';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TOTAL_PAGES = 604;
@@ -35,7 +43,7 @@ interface Ayah {
         number: number;
     };
     tafsir?: string;
-    page: number; // Keep page for setLastRead
+    page: number;
 }
 
 interface PageData {
@@ -55,82 +63,119 @@ export default function ReadingScreen() {
     const [currentPage, setCurrentPage] = useState(page ? parseInt(page as string) : 1);
     const [selectedAyah, setSelectedAyah] = useState<Ayah | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isInitialScrollDone, setIsInitialScrollDone] = useState(false);
+
+    // Refs for stable access in listeners to avoid stale closures
+    const isInitialScrollDoneRef = useRef(false);
+    const initialPageRef = useRef(page ? parseInt(page as string) : 1);
+    const processingPageRef = useRef<number | null>(null);
+    const loadPagesAroundRef = useRef<any>(null);
 
     // RTL handling for pages
     const isRTL = true;
 
     useEffect(() => {
         const init = async () => {
-            setLoading(true);
             const initialPage = page ? parseInt(page as string) : 1;
+
+            // Reset state for new navigation
+            setPages([]);
+            setLoading(true);
+            setIsInitialScrollDone(false);
+            isInitialScrollDoneRef.current = false;
+            initialPageRef.current = initialPage;
             setCurrentPage(initialPage);
+
             await loadPagesAround(initialPage);
             setLoading(false);
-
-            // Scroll to initial page
-            setTimeout(() => {
-                flatListRef.current?.scrollToIndex({
-                    index: initialPage - 1,
-                    animated: false,
-                });
-            }, 100);
         };
         init();
     }, [surahId, page]);
 
+    // Separate effect for the initial scroll once pages are loaded
+    useEffect(() => {
+        if (!loading && pages.length > 0 && !isInitialScrollDoneRef.current) {
+            const targetIndex = pages.findIndex(p => p.pageNumber === initialPageRef.current);
+            if (targetIndex !== -1) {
+                setTimeout(() => {
+                    flatListRef.current?.scrollToIndex({
+                        index: targetIndex,
+                        animated: false,
+                    });
+                    setIsInitialScrollDone(true);
+                    isInitialScrollDoneRef.current = true;
+                }, 100);
+            }
+        }
+    }, [loading, pages]);
+
     const loadPagesAround = async (pageNumber: number) => {
-        const pagesToLoad = new Set([
-            Math.max(1, pageNumber - 2),
-            Math.max(1, pageNumber - 1),
-            pageNumber,
-            Math.min(TOTAL_PAGES, pageNumber + 1),
-            Math.min(TOTAL_PAGES, pageNumber + 2)
-        ]);
+        try {
+            const pagesToLoad = new Set([
+                Math.max(1, pageNumber - 3),
+                Math.max(1, pageNumber - 2),
+                Math.max(1, pageNumber - 1),
+                pageNumber,
+                Math.min(TOTAL_PAGES, pageNumber + 1),
+                Math.min(TOTAL_PAGES, pageNumber + 2),
+                Math.min(TOTAL_PAGES, pageNumber + 3)
+            ]);
 
-        const loadedPages = await Promise.all(
-            Array.from(pagesToLoad).map(async (p) => {
-                const ayahsData = await fetchPageAyahs(p);
-                // Ensure we get an array of ayahs
-                const ayahs = Array.isArray(ayahsData) ? ayahsData : (ayahsData as any).ayahs || [];
+            const loadedPages = await Promise.all(
+                Array.from(pagesToLoad).map(async (p) => {
+                    const ayahsData = await fetchPageAyahs(p);
+                    const ayahs = Array.isArray(ayahsData) ? ayahsData : (ayahsData as any).ayahs || [];
+                    return {
+                        pageNumber: p,
+                        ayahs: ayahs,
+                        imageUrl: '',
+                        mappings: [],
+                    };
+                })
+            );
 
-                return {
-                    pageNumber: p,
-                    ayahs: ayahs,
-                    imageUrl: '',
-                    mappings: [],
-                };
-            })
-        );
-
-        setPages((current) => {
-            const newPages = [...current];
-            loadedPages.forEach((lp) => {
-                if (!newPages.find((p) => p.pageNumber === lp.pageNumber)) {
-                    newPages.push(lp);
-                }
+            setPages((current) => {
+                const newPages = [...current];
+                loadedPages.forEach((lp) => {
+                    if (!newPages.find((p) => p.pageNumber === lp.pageNumber)) {
+                        newPages.push(lp);
+                    }
+                });
+                return newPages.sort((a, b) => a.pageNumber - b.pageNumber);
             });
-            return newPages.sort((a, b) => a.pageNumber - b.pageNumber);
-        });
+        } catch (error) {
+            console.error('Error loading pages:', error);
+        }
     };
+
+    // Update ref so listener always has the latest version
+    loadPagesAroundRef.current = loadPagesAround;
 
     const handleAyahPress = (ayah: any) => {
         setSelectedAyah(ayah);
         bottomSheetRef.current?.snapToIndex(1);
     };
 
-    const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-        if (viewableItems.length > 0) {
-            const item = viewableItems[0].item;
+    const onViewableItemsChanged = useRef(({ viewableItems: vItems }: any) => {
+        if (vItems && vItems.length > 0 && isInitialScrollDoneRef.current) {
+            const item = vItems[0].item;
             const newPage = item.pageNumber;
+
+            if (processingPageRef.current === newPage) return;
+            processingPageRef.current = newPage;
+
+            // Important: Use direct state update for UI sync
             setCurrentPage(newPage);
-            loadPagesAround(newPage);
+
+            // Trigger preloading for next/prev pages
+            loadPagesAroundRef.current?.(newPage);
 
             // Save progress
             if (item.ayahs && item.ayahs.length > 0) {
                 const firstAyah = item.ayahs[0];
                 setLastRead(
-                    firstAyah.surah?.number || 1,
-                    firstAyah.numberInSurah || 1,
+                    parseInt(surahId as string),
+                    firstAyah.numberInSurah,
                     newPage
                 );
             }
@@ -138,100 +183,132 @@ export default function ReadingScreen() {
     }).current;
 
     const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+    const [zoomScale, setZoomScale] = useState(1);
+    const scale = useSharedValue(1);
+    const savedScale = useSharedValue(1);
 
-    // Dynamic styles calculations
-    const paperWidth = windowWidth * 0.94;
-    const paperHeight = windowHeight * 0.82; // Adjust to fit between header and bottom
+    const pinchGesture = useMemo(() => Gesture.Pinch()
+        .onUpdate((e) => {
+            scale.value = savedScale.value * e.scale;
+        })
+        .onEnd(() => {
+            savedScale.value = scale.value;
+            const finalScale = Math.max(0.8, Math.min(2.5, scale.value));
+            scale.value = withSpring(finalScale);
+            savedScale.value = finalScale;
+            runOnJS(setZoomScale)(finalScale);
+        }), [scale, savedScale]);
 
-    // Heuristic for font size: base 20 for average height (800)
+    const paperWidth = windowWidth * 0.98;
+    const finalPaperHeight = windowHeight * 0.92;
     const baseHeight = 844;
-    const scaleFactor = windowHeight / baseHeight;
-    const dynamicFontSize = Math.max(16, Math.min(22, 19 * scaleFactor));
-    const dynamicLineHeight = dynamicFontSize * 2.1; // Increased for better spacing
+    const scaleFactor = (finalPaperHeight / 0.88) / baseHeight;
+    const dynamicFontSize = Math.max(14, Math.min(40, 19 * scaleFactor * zoomScale));
+    const dynamicLineHeight = dynamicFontSize * 2.3;
 
     const renderPage = ({ item }: { item: PageData }) => {
         return (
-            <View style={[styles.pageContainer, { width: windowWidth }]}>
-                <View style={[styles.mushafPaper, { width: paperWidth, height: paperHeight }]}>
-                    {/* Islamic Border Decor */}
-                    <View style={styles.borderContainer}>
-                        <View style={styles.topOrnament} />
-                        <View style={styles.bottomOrnament} />
-                        <View style={styles.leftOrnament} />
-                        <View style={styles.rightOrnament} />
-                    </View>
-
-                    <ScrollView
-                        showsVerticalScrollIndicator={false}
-                        contentContainerStyle={styles.mushafScrollContent}
-                    >
-                        <View style={styles.mushafTextContainer}>
-                            {(() => {
-                                const sections: any[] = [];
-                                let currentSection: any = null;
-
-                                item.ayahs.forEach((ayah, index) => {
-                                    const isNewSurah = index === 0 || ayah.surah?.number !== item.ayahs[index - 1]?.surah?.number;
-                                    if (isNewSurah) {
-                                        currentSection = {
-                                            surah: ayah.surah,
-                                            showBismillah: ayah.surah?.number !== 9 && ayah.numberInSurah === 1,
-                                            ayahs: []
-                                        };
-                                        sections.push(currentSection);
-                                    }
-                                    currentSection.ayahs.push(ayah);
-                                });
-
-                                return sections.map((section, sIndex) => (
-                                    <View key={`section-${section.surah?.number}-${sIndex}`} style={{ width: '100%' }}>
-                                        <View style={styles.surahHeader}>
-                                            <Text style={styles.surahHeaderText}>{section.surah?.name}</Text>
-                                        </View>
-
-                                        {section.showBismillah && (
-                                            <Text style={styles.bismillahText}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</Text>
-                                        )}
-
-                                        <Text
-                                            style={[
-                                                styles.ayahText,
-                                                {
-                                                    fontSize: dynamicFontSize,
-                                                    lineHeight: dynamicLineHeight
-                                                }
-                                            ]}
-                                            textBreakStrategy="highQuality"
-                                        >
-                                            {section.ayahs.map((ayah: any) => {
-                                                const isSelected = selectedAyah?.number === ayah.number;
-                                                const ayahContent = ayah.text || ayah.text_uthmani || ayah.text_warsh || '';
-                                                return (
-                                                    <Text
-                                                        key={ayah.number}
-                                                        onPress={() => handleAyahPress(ayah)}
-                                                        style={[isSelected && styles.selectedAyahText]}
-                                                    >
-                                                        {ayahContent}{' '}
-                                                        <View style={styles.markerInlineContainer}>
-                                                            <AyahMarker number={ayah.numberInSurah} />
-                                                        </View>{' '}
-                                                    </Text>
-                                                );
-                                            })}
-                                        </Text>
-                                    </View>
-                                ));
-                            })()}
+            <GestureDetector gesture={pinchGesture}>
+                <View style={[styles.pageContainer, { width: windowWidth }]}>
+                    <View style={[styles.mushafPaper, { width: paperWidth, height: finalPaperHeight }]}>
+                        <View style={styles.borderOuter}>
+                            <View style={styles.borderInner}>
+                                <View style={styles.cornerTopLeft} />
+                                <View style={styles.cornerTopRight} />
+                                <View style={styles.cornerBottomLeft} />
+                                <View style={styles.cornerBottomRight} />
+                            </View>
                         </View>
-                    </ScrollView>
 
-                    {/* Page Number */}
-                    <View style={[styles.pageNumberBadge, { bottom: 15 }]}>
-                        <Text style={styles.pageNumberText}>{item.pageNumber}</Text>
+                        <ScrollView
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.mushafScrollContent}
+                            bounces={true}
+                        >
+                            <View style={styles.mushafTextContainer}>
+                                {(() => {
+                                    const sections: any[] = [];
+                                    let currentSection: any = null;
+
+                                    item.ayahs.forEach((ayah, index) => {
+                                        const isNewSurah = index === 0 || ayah.surah?.number !== item.ayahs[index - 1]?.surah?.number;
+                                        if (isNewSurah) {
+                                            currentSection = {
+                                                surah: ayah.surah,
+                                                showBismillah: ayah.surah?.number !== 9 && ayah.numberInSurah === 1,
+                                                ayahs: []
+                                            };
+                                            sections.push(currentSection);
+                                        }
+                                        currentSection.ayahs.push(ayah);
+                                    });
+
+                                    return sections.map((section, sIndex) => (
+                                        <View key={`section-${section.surah?.number}-${sIndex}`} style={{ width: '100%' }}>
+                                            <View style={styles.surahHeader}>
+                                                <View style={styles.surahHeaderDecorative}>
+                                                    <Text style={styles.surahHeaderText}>{section.surah?.name}</Text>
+                                                </View>
+                                            </View>
+
+                                            {section.showBismillah && (
+                                                <Text style={[styles.bismillahText, { fontSize: dynamicFontSize * 1.2 }]}>
+                                                    بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+                                                </Text>
+                                            )}
+
+                                            <Text
+                                                style={[
+                                                    styles.ayahText,
+                                                    {
+                                                        fontSize: dynamicFontSize,
+                                                        lineHeight: dynamicLineHeight
+                                                    }
+                                                ]}
+                                                textBreakStrategy="balanced"
+                                            >
+                                                {section.ayahs.map((ayah: any) => {
+                                                    const isSelected = selectedAyah?.number === ayah.number;
+                                                    let ayahContent = ayah.text || ayah.text_uthmani || ayah.text_warsh || '';
+
+                                                    if (section.showBismillah && ayah.numberInSurah === 1 && section.surah?.number !== 1) {
+                                                        const bismillahPattern = /^بِسْمِ [^ ]+ [^ ]+ [^ ]+/;
+                                                        ayahContent = ayahContent.replace(bismillahPattern, '').trim();
+                                                        if (ayahContent.startsWith('بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ')) {
+                                                            ayahContent = ayahContent.replace('بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ', '').trim();
+                                                        }
+                                                    }
+
+                                                    return (
+                                                        <Text
+                                                            key={ayah.number}
+                                                            onPress={() => handleAyahPress(ayah)}
+                                                            style={[isSelected && styles.selectedAyahText]}
+                                                        >
+                                                            {ayahContent}
+                                                            <View style={[styles.markerInlineContainer, { width: dynamicFontSize * 1.5, height: dynamicFontSize * 1.5 }]}>
+                                                                <AyahMarker number={ayah.numberInSurah} scale={zoomScale} />
+                                                            </View>
+                                                        </Text>
+                                                    );
+                                                })}
+                                            </Text>
+                                        </View>
+                                    ));
+                                })()}
+                            </View>
+                        </ScrollView>
+
+                        <View style={styles.pageNumberContainer}>
+                            <View style={styles.pageNumberOrnamentLeft} />
+                            <View style={styles.pageNumberBadge}>
+                                <Text style={styles.pageNumberText}>{item.pageNumber}</Text>
+                            </View>
+                            <View style={styles.pageNumberOrnamentRight} />
+                        </View>
                     </View>
                 </View>
-            </View>
+            </GestureDetector>
         );
     };
 
@@ -244,14 +321,14 @@ export default function ReadingScreen() {
         );
     }
 
-    const currentSurahName = pages.find(p => p.pageNumber === currentPage)?.ayahs[0]?.surah?.name || 'سورة';
+    const currentPageData = pages.find(p => p.pageNumber === currentPage);
+    const currentSurahName = currentPageData?.ayahs[0]?.surah?.name || 'سورة';
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <StatusBar style="dark" />
             <Stack.Screen options={{ headerShown: false }} />
 
-            {/* iOS Style Blurred Header */}
             <BlurView intensity={80} tint="light" style={styles.header}>
                 <View style={styles.headerContent}>
                     <Pressable onPress={() => router.back()} style={styles.headerButton}>
@@ -262,10 +339,7 @@ export default function ReadingScreen() {
                         <Text style={styles.headerPageInfo}>صفحة {currentPage}</Text>
                     </View>
                     <View style={styles.headerActions}>
-                        <Pressable style={styles.headerButton}>
-                            <Share2 size={20} color={Colors.text.primary} />
-                        </Pressable>
-                        <Pressable style={styles.headerButton}>
+                        <Pressable style={styles.headerButton} onPress={() => {/* Show Info */ }}>
                             <Info size={20} color={Colors.text.primary} />
                         </Pressable>
                     </View>
@@ -287,13 +361,18 @@ export default function ReadingScreen() {
                     offset: SCREEN_WIDTH * index,
                     index,
                 })}
+                onScrollToIndexFailed={(info) => {
+                    const wait = new Promise(resolve => setTimeout(resolve, 500));
+                    wait.then(() => {
+                        flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+                    });
+                }}
                 inverted={isRTL}
                 initialNumToRender={3}
                 maxToRenderPerBatch={3}
                 windowSize={5}
             />
 
-            {/* Ayah Interaction Bottom Sheet */}
             <AyahBottomSheet
                 ref={bottomSheetRef}
                 ayah={selectedAyah as any}
@@ -313,94 +392,160 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     mushafPaper: {
-        backgroundColor: '#F9F7F2',
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.15,
-        shadowRadius: 15,
-        elevation: 8,
+        backgroundColor: '#FFFBF0',
+        borderRadius: 8,
+        shadowColor: '#2D1E12',
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        elevation: 12,
         position: 'relative',
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: '#E8E1D0',
-        padding: 5,
-        marginTop: 40, // Space for header
+        borderColor: '#D4C6A9',
+        padding: 4,
+        marginTop: 40,
     },
-    imageContainer: {
-        flex: 1,
-        position: 'relative',
-    },
-    pageImage: {
-        flex: 1,
-        width: '100%',
-    },
-    borderContainer: {
+    borderOuter: {
         ...StyleSheet.absoluteFillObject,
-        borderWidth: 6,
-        borderColor: '#E8E1D0',
-        borderRadius: 2,
-        margin: 4,
-    },
-    topOrnament: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 2,
-        backgroundColor: '#8d6e63',
-        opacity: 0.3,
-    },
-    bottomOrnament: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 2,
-        backgroundColor: '#8d6e63',
-        opacity: 0.3,
-    },
-    leftOrnament: {
-        position: 'absolute',
-        top: 0,
-        bottom: 0,
-        left: 0,
-        width: 1,
-        backgroundColor: '#8d6e63',
-        opacity: 0.1,
-    },
-    rightOrnament: {
-        position: 'absolute',
-        top: 0,
-        bottom: 0,
-        right: 0,
-        width: 1,
-        backgroundColor: '#8d6e63',
-        opacity: 0.1,
-    },
-    selectionHighlight: {
-        position: 'absolute',
-        top: '20%', // Placeholder
-        left: '10%',
-        right: '10%',
-        height: 40,
-        backgroundColor: 'rgba(212, 175, 55, 0.3)', // Golden Overlay
+        borderWidth: 1.5,
+        borderColor: '#D4AF37',
+        margin: 6,
         borderRadius: 4,
     },
-    pageNumberBadge: {
+    borderInner: {
+        ...StyleSheet.absoluteFillObject,
+        borderWidth: 0.8,
+        borderColor: '#8A6E1D',
+        margin: 3,
+        borderRadius: 2,
+    },
+    cornerTopLeft: {
         position: 'absolute',
-        bottom: 15,
+        top: -4,
+        left: -4,
+        width: 12,
+        height: 12,
+        borderTopWidth: 2,
+        borderLeftWidth: 2,
+        borderColor: '#8A6E1D',
+    },
+    cornerTopRight: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        width: 12,
+        height: 12,
+        borderTopWidth: 2,
+        borderRightWidth: 2,
+        borderColor: '#8A6E1D',
+    },
+    cornerBottomLeft: {
+        position: 'absolute',
+        bottom: -4,
+        left: -4,
+        width: 12,
+        height: 12,
+        borderBottomWidth: 2,
+        borderLeftWidth: 2,
+        borderColor: '#8A6E1D',
+    },
+    cornerBottomRight: {
+        position: 'absolute',
+        bottom: -4,
+        right: -4,
+        width: 12,
+        height: 12,
+        borderBottomWidth: 2,
+        borderRightWidth: 2,
+        borderColor: '#8A6E1D',
+    },
+    mushafScrollContent: {
+        flexGrow: 1,
+    },
+    mushafTextContainer: {
+        flex: 1,
+        paddingHorizontal: 28,
+        paddingTop: 40,
+        paddingBottom: 40,
+        justifyContent: 'flex-start',
+        alignItems: 'center',
+    },
+    ayahText: {
+        fontFamily: 'Amiri-Regular',
+        textAlign: 'justify',
+        color: '#1A1A1A',
+        writingDirection: 'rtl',
+        width: '100%',
+        letterSpacing: -0.2,
+    },
+    markerInlineContainer: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    selectedAyahText: {
+        backgroundColor: 'rgba(212, 175, 55, 0.25)',
+    },
+    surahHeader: {
+        marginVertical: 15,
+        alignItems: 'center',
+        width: '100%',
+    },
+    surahHeaderDecorative: {
+        backgroundColor: '#F7F1E1',
+        borderWidth: 1.5,
+        borderColor: '#D4AF37',
+        paddingVertical: 8,
+        paddingHorizontal: 25,
+        borderRadius: 30,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    surahHeaderText: {
+        fontFamily: 'Amiri-Bold',
+        fontSize: 19,
+        color: '#2E5A27',
+    },
+    bismillahText: {
+        fontFamily: 'Amiri-Bold',
+        textAlign: 'center',
+        marginVertical: 12,
+        color: '#1A1A1A',
+    },
+    pageNumberContainer: {
+        position: 'absolute',
+        bottom: 35,
+        flexDirection: 'row',
+        alignItems: 'center',
         alignSelf: 'center',
-        backgroundColor: 'rgba(212, 175, 55, 0.1)',
-        paddingHorizontal: 12,
+    },
+    pageNumberBadge: {
+        backgroundColor: '#FDF8E8',
+        paddingHorizontal: 14,
         paddingVertical: 4,
-        borderRadius: 20,
+        borderRadius: 15,
         borderWidth: 1,
         borderColor: '#D4AF37',
+        zIndex: 5,
+    },
+    pageNumberOrnamentLeft: {
+        width: 20,
+        height: 1,
+        backgroundColor: '#D4AF37',
+        marginRight: -5,
+    },
+    pageNumberOrnamentRight: {
+        width: 20,
+        height: 1,
+        backgroundColor: '#D4AF37',
+        marginLeft: -5,
     },
     pageNumberText: {
         fontFamily: 'Amiri-Bold',
-        fontSize: 16,
+        fontSize: 15,
         color: '#8A6E1D',
     },
     header: {
@@ -455,59 +600,5 @@ const styles = StyleSheet.create({
         fontFamily: 'Amiri-Regular',
         fontSize: 18,
         color: Colors.text.secondary,
-    },
-    mushafScrollContent: {
-        flexGrow: 1,
-    },
-    mushafTextContainer: {
-        flex: 1,
-        paddingHorizontal: 15,
-        paddingTop: 30, // Space from top ornament
-        paddingBottom: 80, // Generous padding to clear page number even when scrolled
-        justifyContent: 'flex-start',
-        alignItems: 'center',
-    },
-    ayahText: {
-        fontFamily: 'Amiri-Regular',
-        textAlign: 'justify',
-        color: '#2D2D2D',
-        writingDirection: 'rtl',
-    },
-    markerInlineContainer: {
-        width: 30,
-        height: 30,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    selectedAyahText: {
-        backgroundColor: 'rgba(212, 175, 55, 0.25)',
-    },
-    ayahMarker: {
-        fontFamily: 'Amiri-Bold',
-        fontSize: 16,
-        color: '#8A6E1D',
-    },
-    surahHeader: {
-        backgroundColor: '#F1EBDC',
-        borderWidth: 1,
-        borderColor: '#D4AF37',
-        paddingVertical: 6,
-        paddingHorizontal: 16,
-        borderRadius: 8,
-        marginVertical: 10,
-        alignItems: 'center',
-        alignSelf: 'center',
-    },
-    surahHeaderText: {
-        fontFamily: 'Amiri-Bold',
-        fontSize: 18,
-        color: '#1B5E20',
-    },
-    bismillahText: {
-        fontFamily: 'Amiri-Bold',
-        fontSize: 22,
-        textAlign: 'center',
-        marginVertical: 5,
-        color: '#2D2D2D',
     },
 });

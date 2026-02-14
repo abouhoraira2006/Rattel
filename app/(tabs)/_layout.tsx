@@ -1,6 +1,6 @@
 import { Colors, Typography } from '@/constants/theme';
 import { Tabs } from 'expo-router';
-import { BookOpen, Bookmark, Settings } from 'lucide-react-native';
+import { BookOpen, Bookmark, Search } from 'lucide-react-native';
 import { Platform } from 'react-native';
 
 export default function TabLayout() {
@@ -59,19 +59,21 @@ export default function TabLayout() {
                 name="bookmarks"
                 options={{
                     title: 'Bookmarks',
-                    headerTitle: 'Bookmarks · المرجعيات',
+                    headerShown: false,
                     tabBarIcon: ({ color, size }) => (
                         <Bookmark size={size} color={color} strokeWidth={2} />
                     ),
                 }}
             />
+        
             <Tabs.Screen
-                name="settings"
+                name="search"
                 options={{
-                    title: 'Settings',
-                    headerTitle: 'Settings · الإعدادات',
+                    title: 'Search',
+                    headerShown: false,
                     tabBarIcon: ({ color, size }) => (
-                        <Settings size={size} color={color} strokeWidth={2} />
+                        <Search size={size} color={color} strokeWidth={2} />
+
                     ),
                 }}
             />

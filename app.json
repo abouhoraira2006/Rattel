@@ -4,7 +4,7 @@
     "slug": "Rattel",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/Rattil.png",
     "scheme": "rattel",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

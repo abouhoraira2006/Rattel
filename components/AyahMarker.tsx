@@ -4,12 +4,16 @@ import Svg, { Circle, G, Path } from 'react-native-svg';
 
 interface AyahMarkerProps {
     number: number;
+    scale?: number;
 }
 
-const AyahMarker: React.FC<AyahMarkerProps> = ({ number }) => {
+const AyahMarker: React.FC<AyahMarkerProps> = ({ number, scale = 1 }) => {
+    const size = 28 * scale;
+    const svgSize = 24 * scale;
+    const fontSize = 8 * scale;
     return (
-        <View style={styles.container}>
-            <Svg width="24" height="24" viewBox="0 0 36 36">
+        <View style={[styles.container, { width: size, height: size }]}>
+            <Svg width={svgSize} height={svgSize} viewBox="0 0 36 36">
                 <G transform="translate(18, 18)">
                     {/* Main Outer Decorative Shape (8-pointed star/circle) */}
                     <Path
@@ -29,7 +33,7 @@ const AyahMarker: React.FC<AyahMarkerProps> = ({ number }) => {
                 </G>
             </Svg>
             <View style={styles.numberContainer}>
-                <Text style={styles.numberText}>{number}</Text>
+                <Text style={[styles.numberText, { fontSize: fontSize }]}>{number}</Text>
             </View>
         </View>
     );
@@ -37,8 +41,6 @@ const AyahMarker: React.FC<AyahMarkerProps> = ({ number }) => {
 
 const styles = StyleSheet.create({
     container: {
-        width: 28,
-        height: 28,
         justifyContent: 'center',
         alignItems: 'center',
         marginHorizontal: 3,
@@ -51,7 +53,6 @@ const styles = StyleSheet.create({
     },
     numberText: {
         fontFamily: 'Amiri-Bold',
-        fontSize: 8,
         color: '#8A6E1D',
         textAlign: 'center',
         marginTop: -1,

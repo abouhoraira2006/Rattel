@@ -1,19 +1,23 @@
 import SurahCard from '@/components/SurahCard';
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '@/constants/theme';
-import { fetchSurahList, getDailyAyah } from '@/services/api';
+import { fetchSurahList, fetchSurahPage, getDailyAyah, normalizeArabic } from '@/services/api';
 import { getLastRead, getReadingProgress, setLastRead } from '@/utils/storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { BookOpenCheck, Sparkles, TrendingUp } from 'lucide-react-native';
+import { BookOpenCheck, Search, Sparkles, TrendingUp } from 'lucide-react-native';
 import { MotiView } from 'moti';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
+    Keyboard,
+    KeyboardAvoidingView,
+    Platform,
     Pressable,
     RefreshControl,
     StyleSheet,
     Text,
+    TextInput,
     View,
 } from 'react-native';
 
@@ -51,6 +55,16 @@ export default function HomeScreen() {
     const [lastRead, setLastReadState] = useState<LastRead | null>(null);
     const [progress, setProgress] = useState(0);
     const [dailyAyah, setDailyAyah] = useState<DailyAyah | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const filteredSurahs = useMemo(() => {
+        if (!searchQuery) return surahs;
+        const normalizedQuery = normalizeArabic(searchQuery);
+        return surahs.filter(s =>
+            normalizeArabic(s.name).includes(normalizedQuery) ||
+            s.englishName.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [surahs, searchQuery]);
 
     const loadData = async () => {
         try {
@@ -64,7 +78,7 @@ export default function HomeScreen() {
             setSurahs(surahList);
             setLastReadState(lastReadData || { surahNumber: 1, ayahNumber: 1 });
             setProgress(progressData);
-            setDailyAyah(ayah);
+            setDailyAyah(ayah as any);
 
             // If no last read, set default to Al-Fatihah
             if (!lastReadData) {
@@ -87,17 +101,46 @@ export default function HomeScreen() {
         loadData();
     };
 
-    const handleSurahPress = (surahNumber: number) => {
-        router.push(`/(reading)/${surahNumber}`);
+    const handleSurahPress = async (surahNumber: number) => {
+        try {
+            const startPage = await fetchSurahPage(surahNumber);
+            router.push({
+                pathname: "/(reading)/[surahId]" as any,
+                params: { surahId: surahNumber.toString(), page: startPage.toString() }
+            });
+        } catch (error) {
+            router.push({
+                pathname: "/(reading)/[surahId]" as any,
+                params: { surahId: surahNumber.toString() }
+            });
+        }
     };
 
     const handleContinueReading = () => {
         if (lastRead) {
-            router.push(`/(reading)/${lastRead.surahNumber}`);
+            router.push({
+                pathname: "/(reading)/[surahId]" as any,
+                params: { surahId: lastRead.surahNumber.toString(), page: (lastRead.pageNumber || 1).toString() }
+            });
         }
     };
 
-    const renderHeader = () => (
+
+    const renderItem = useCallback(({ item, index }: { item: Surah, index: number }) => (
+        <SurahCard
+            key={item.number}
+            number={item.number}
+            name={item.name}
+            englishName={item.englishName}
+            englishNameTranslation={item.englishNameTranslation}
+            numberOfAyahs={item.numberOfAyahs}
+            revelationType={item.revelationType}
+            onPress={() => handleSurahPress(item.number)}
+            index={index}
+        />
+    ), [handleSurahPress]);
+
+    const Header = useMemo(() => (
         <View style={styles.header}>
             {/* Daily Ayah Card */}
             {dailyAyah && (
@@ -194,13 +237,29 @@ export default function HomeScreen() {
                 </MotiView>
             )}
 
+            {/* Surah search */}
+            <View style={styles.searchSection}>
+                <View style={styles.searchBar}>
+                    <Search size={20} color={Colors.text.tertiary} />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="ابحث عن السورة..."
+                        placeholderTextColor={Colors.text.tertiary}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        autoCorrect={false}
+                        autoCapitalize="none"
+                    />
+                </View>
+            </View>
+
             {/* Section Title */}
             <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>جميع السور</Text>
-                <Text style={styles.sectionSubtitle}>114 سورة</Text>
+                <Text style={styles.sectionSubtitle}>{filteredSurahs.length} سورة</Text>
             </View>
         </View>
-    );
+    ), [dailyAyah, lastRead, searchQuery, filteredSurahs.length, progress, surahs]);
 
     if (loading) {
         return (
@@ -212,24 +271,15 @@ export default function HomeScreen() {
     }
 
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.container}
+        >
             <FlatList
-                data={surahs}
-                renderItem={({ item, index }) => (
-                    <SurahCard
-                        key={item.number}
-                        number={item.number}
-                        name={item.name}
-                        englishName={item.englishName}
-                        englishNameTranslation={item.englishNameTranslation}
-                        numberOfAyahs={item.numberOfAyahs}
-                        revelationType={item.revelationType}
-                        onPress={() => handleSurahPress(item.number)}
-                        index={index}
-                    />
-                )}
+                data={filteredSurahs}
+                renderItem={renderItem}
                 keyExtractor={(item) => item.number.toString()}
-                ListHeaderComponent={renderHeader}
+                ListHeaderComponent={Header}
                 contentContainerStyle={styles.listContent}
                 refreshControl={
                     <RefreshControl
@@ -240,8 +290,10 @@ export default function HomeScreen() {
                     />
                 }
                 showsVerticalScrollIndicator={false}
+                onScrollBeginDrag={Keyboard.dismiss}
+                keyboardShouldPersistTaps="handled"
             />
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 
@@ -279,30 +331,30 @@ const styles = StyleSheet.create({
         padding: Spacing.lg,
     },
     dailyHeader: {
-        flexDirection: 'row',
+        flexDirection: 'row-reverse',
         alignItems: 'center',
         gap: Spacing.sm,
-        marginBottom: Spacing.md,
+        marginBottom: Spacing.sm,
     },
     dailyLabel: {
-        fontSize: Typography.fontSize.lg,
+        fontSize: Typography.fontSize.base,
         fontFamily: Typography.fontFamily.amiriBold,
-        color: Colors.primary,
+        color: '#8A6E1D',
     },
     dailyAyahText: {
-        fontSize: Typography.fontSize.xl,
+        fontSize: Typography.fontSize.lg,
         fontFamily: Typography.fontFamily.amiriRegular,
-        color: Colors.text.primary,
-        textAlign: 'right',
+        color: '#1A1A1A',
+        textAlign: 'center',
         writingDirection: 'rtl',
-        lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.xl,
-        marginBottom: Spacing.md,
+        lineHeight: 32,
+        marginVertical: Spacing.sm,
     },
     dailyReference: {
-        fontSize: Typography.fontSize.sm,
-        fontFamily: Typography.fontFamily.amiriRegular,
-        color: Colors.primary,
-        textAlign: 'right',
+        fontSize: Typography.fontSize.xs,
+        fontFamily: Typography.fontFamily.amiriBold,
+        color: '#8A6E1D',
+        textAlign: 'left',
     },
     heroCard: {
         borderRadius: BorderRadius['2xl'],
@@ -314,55 +366,55 @@ const styles = StyleSheet.create({
         transform: [{ scale: 0.98 }],
     },
     heroGradient: {
-        padding: Spacing.xl,
+        padding: Spacing.lg,
     },
     glassOverlay: {
         backgroundColor: 'rgba(255, 255, 255, 0.1)',
         borderRadius: BorderRadius.xl,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.2)',
-        padding: Spacing.lg,
+        padding: Spacing.md,
+        flexDirection: 'row-reverse',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
     heroIcon: {
-        width: 56,
-        height: 56,
-        borderRadius: BorderRadius.xl,
+        width: 48,
+        height: 48,
+        borderRadius: BorderRadius.lg,
         backgroundColor: 'rgba(255, 255, 255, 0.15)',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: Spacing.base,
     },
     heroContent: {
-        gap: Spacing.xs,
+        flex: 1,
+        marginRight: Spacing.lg,
+        gap: 2,
     },
     heroLabel: {
-        fontSize: Typography.fontSize.base,
+        fontSize: Typography.fontSize.xs,
         fontFamily: Typography.fontFamily.amiriRegular,
         color: Colors.accent,
         textTransform: 'uppercase',
         letterSpacing: 1,
     },
     heroSurah: {
-        fontSize: Typography.fontSize['2xl'],
+        fontSize: Typography.fontSize.xl,
         fontFamily: Typography.fontFamily.amiriBold,
         color: Colors.text.inverse,
         textAlign: 'right',
-        writingDirection: 'rtl',
     },
     heroSubtext: {
-        fontSize: Typography.fontSize.lg,
+        fontSize: Typography.fontSize.base,
         fontFamily: Typography.fontFamily.amiriRegular,
-        color: 'rgba(255, 255, 255, 0.75)',
-        marginBottom: Spacing.sm,
+        color: 'rgba(255, 255, 255, 0.8)',
         textAlign: 'right',
-        writingDirection: 'rtl',
     },
     heroPage: {
-        fontSize: Typography.fontSize.sm,
+        fontSize: Typography.fontSize.xs,
         fontFamily: Typography.fontFamily.amiriRegular,
         color: Colors.accent,
         textAlign: 'right',
-        marginBottom: Spacing.sm,
     },
     progressContainer: {
         marginTop: Spacing.md,
@@ -406,5 +458,27 @@ const styles = StyleSheet.create({
         fontFamily: Typography.fontFamily.amiriRegular,
         color: Colors.text.secondary,
         textAlign: 'right',
+    },
+    searchSection: {
+        marginVertical: Spacing.sm,
+    },
+    searchBar: {
+        flexDirection: 'row-reverse',
+        alignItems: 'center',
+        backgroundColor: Colors.surface,
+        borderRadius: BorderRadius.xl,
+        paddingHorizontal: Spacing.md,
+        height: 50,
+        ...Shadows.sm,
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+    },
+    searchInput: {
+        flex: 1,
+        fontFamily: Typography.fontFamily.amiriRegular,
+        fontSize: 16,
+        color: Colors.text.primary,
+        textAlign: 'right',
+        marginRight: Spacing.sm,
     },
 });
