@@ -1,10 +1,10 @@
 import AyahBottomSheet from '@/components/AyahBottomSheet';
+import AyahMarker from '@/components/AyahMarker';
 import { Colors, Spacing } from '@/constants/theme';
-import { fetchPageAyahs, fetchPageMapping, getPageImageUrl } from '@/services/api';
+import { fetchPageAyahs } from '@/services/api';
 import { setLastRead } from '@/utils/storage';
 import BottomSheet from '@gorhom/bottom-sheet';
 import { BlurView } from 'expo-blur';
-import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ArrowRight, Info, Share2 } from 'lucide-react-native';
@@ -17,7 +17,8 @@ import {
     StyleSheet,
     Text,
     View,
-    ViewToken
+    ViewToken,
+    useWindowDimensions
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -53,8 +54,6 @@ export default function ReadingScreen() {
     const [currentPage, setCurrentPage] = useState(page ? parseInt(page as string) : 1);
     const [selectedAyah, setSelectedAyah] = useState<Ayah | null>(null);
     const [loading, setLoading] = useState(true);
-    const [paperHeight, setPaperHeight] = useState(SCREEN_HEIGHT * 0.86); // Default fallback
-    const [tapCoord, setTapCoord] = useState<{ x: number, y: number } | null>(null);
 
     // RTL handling for pages
     const isRTL = true;
@@ -80,26 +79,24 @@ export default function ReadingScreen() {
 
     const loadPagesAround = async (pageNumber: number) => {
         const pagesToLoad = new Set([
+            Math.max(1, pageNumber - 2),
             Math.max(1, pageNumber - 1),
             pageNumber,
-            Math.min(TOTAL_PAGES, pageNumber + 1)
+            Math.min(TOTAL_PAGES, pageNumber + 1),
+            Math.min(TOTAL_PAGES, pageNumber + 2)
         ]);
 
         const loadedPages = await Promise.all(
             Array.from(pagesToLoad).map(async (p) => {
-                const [ayahsData, mappingData] = await Promise.all([
-                    fetchPageAyahs(p),
-                    fetchPageMapping(p)
-                ]);
-
-                const ayahs = (ayahsData as any).ayahs || ayahsData || [];
-                const mappings = (mappingData as any)?.verses || [];
+                const ayahsData = await fetchPageAyahs(p);
+                // Ensure we get an array of ayahs
+                const ayahs = Array.isArray(ayahsData) ? ayahsData : (ayahsData as any).ayahs || [];
 
                 return {
                     pageNumber: p,
                     ayahs: ayahs,
-                    imageUrl: getPageImageUrl(p),
-                    mappings: mappings,
+                    imageUrl: '',
+                    mappings: [],
                 };
             })
         );
@@ -115,91 +112,21 @@ export default function ReadingScreen() {
         });
     };
 
-    const handleAyahPress = (ayah: any, event?: any) => {
+    const handleAyahPress = (ayah: any) => {
         setSelectedAyah(ayah);
-        if (event) {
-            setTapCoord({ x: event.nativeEvent.locationX, y: event.nativeEvent.locationY });
-        } else {
-            setTapCoord(null);
-        }
         bottomSheetRef.current?.snapToIndex(1);
-    };
-
-    const handlePageImagePress = (event: any, item: PageData) => {
-        const { locationY } = event.nativeEvent;
-        const pageAyahs = item.ayahs;
-        const mappings = item.mappings;
-
-        if (!mappings || mappings.length === 0) {
-            // Fallback to simple heuristic if mapping is missing
-            const index = Math.floor((locationY / paperHeight) * pageAyahs.length);
-            const ayah = pageAyahs[Math.min(index, pageAyahs.length - 1)];
-            if (ayah) handleAyahPress(ayah, event);
-            return;
-        }
-
-        // Precise Mapping Logic:
-        // A Mushaf page usually has 15 lines. 
-        // Calibration: Mushaf images have margins (approx 7% top/bottom).
-        const TOP_MARGIN = 0.07;
-        const BOTTOM_MARGIN = 0.07;
-        const usableHeight = paperHeight * (1 - TOP_MARGIN - BOTTOM_MARGIN);
-        const relativeY = locationY - (paperHeight * TOP_MARGIN);
-
-        // Map relativeY to line index (1-15)
-        let lineIndex = Math.floor((relativeY / usableHeight) * 15) + 1;
-        lineIndex = Math.max(1, Math.min(15, lineIndex)); // Clamp to 1-15 
-
-        // Find the verse that exists on this line
-        const verseOnLine = mappings.find(v =>
-            v?.words?.some((w: any) => w.line_number === lineIndex)
-        );
-
-        if (verseOnLine) {
-            // Match mapping verse to our local ayah data
-            // Note: v.verse_number is the ayah number in the surah
-            const ayah = pageAyahs.find(a =>
-                a.numberInSurah === verseOnLine.verse_number &&
-                a.surah?.number === parseInt(verseOnLine.verse_key.split(':')[0])
-            );
-            if (ayah) {
-                handleAyahPress(ayah, event);
-            } else {
-                // Try finding the closest ayah on this line or neighboring lines
-                const fallbackAyah = pageAyahs.find(a =>
-                    a.numberInSurah === verseOnLine.verse_number ||
-                    a.number === verseOnLine.id
-                );
-                if (fallbackAyah) handleAyahPress(fallbackAyah, event);
-            }
-        } else {
-            // Very close nearest line fallback
-            const nearestVerse = mappings.reduce((prev, curr) => {
-                const prevWords = prev?.words || [];
-                const currWords = curr?.words || [];
-                const prevDist = prevWords.length > 0
-                    ? Math.min(...prevWords.map((w: any) => Math.abs(w.line_number - lineIndex)))
-                    : 999;
-                const currDist = currWords.length > 0
-                    ? Math.min(...currWords.map((w: any) => Math.abs(w.line_number - lineIndex)))
-                    : 999;
-                return currDist < prevDist ? curr : prev;
-            });
-
-            const ayah = pageAyahs.find(a => a.numberInSurah === nearestVerse.verse_number);
-            if (ayah) handleAyahPress(ayah, event);
-        }
     };
 
     const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems.length > 0) {
-            const newPage = viewableItems[0].item.pageNumber;
+            const item = viewableItems[0].item;
+            const newPage = item.pageNumber;
             setCurrentPage(newPage);
             loadPagesAround(newPage);
 
             // Save progress
-            const firstAyah = viewableItems[0].item.ayahs?.[0];
-            if (firstAyah) {
+            if (item.ayahs && item.ayahs.length > 0) {
+                const firstAyah = item.ayahs[0];
                 setLastRead(
                     firstAyah.surah?.number || 1,
                     firstAyah.numberInSurah || 1,
@@ -209,48 +136,98 @@ export default function ReadingScreen() {
         }
     }).current;
 
-    const renderPage = ({ item }: { item: PageData }) => (
-        <View style={styles.pageContainer}>
-            <View
-                style={styles.mushafPaper}
-                onLayout={(e) => setPaperHeight(e.nativeEvent.layout.height)}
-            >
-                {/* Islamic Border */}
-                <View style={styles.borderContainer}>
-                    <View style={styles.topOrnament} />
-                    <View style={styles.leftOrnament} />
-                    <View style={styles.rightOrnament} />
-                    <View style={styles.bottomOrnament} />
-                </View>
+    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-                {/* Page Image */}
-                <Pressable
-                    onPress={(e) => handlePageImagePress(e, item)}
-                    style={styles.imageContainer}
-                >
-                    <Image
-                        source={{ uri: item.imageUrl }}
-                        style={styles.pageImage}
-                        contentFit="contain"
-                        transition={300}
-                    />
+    // Dynamic styles calculations
+    const paperWidth = windowWidth * 0.94;
+    const paperHeight = windowHeight * 0.82; // Adjust to fit between header and bottom
 
-                    {/* Ayah Highlighting Layer */}
-                    {selectedAyah && item.ayahs.find((a: any) => a.number === selectedAyah.number) && tapCoord && (
-                        <View style={[
-                            styles.selectionHighlight,
-                            { top: tapCoord.y - 20, left: 10, width: SCREEN_WIDTH * 0.94 - 20 }
-                        ]} />
-                    )}
-                </Pressable>
+    // Heuristic for font size: base 20 for average height (800)
+    const baseHeight = 844;
+    const scaleFactor = windowHeight / baseHeight;
+    const dynamicFontSize = Math.max(16, Math.min(22, 19 * scaleFactor));
+    const dynamicLineHeight = dynamicFontSize * 1.85;
 
-                {/* Floating Page Number */}
-                <View style={styles.pageNumberBadge}>
-                    <Text style={styles.pageNumberText}>{item.pageNumber}</Text>
+    const renderPage = ({ item }: { item: PageData }) => {
+        return (
+            <View style={[styles.pageContainer, { width: windowWidth }]}>
+                <View style={[styles.mushafPaper, { width: paperWidth, height: paperHeight }]}>
+                    {/* Islamic Border Decor */}
+                    <View style={styles.borderContainer}>
+                        <View style={styles.topOrnament} />
+                        <View style={styles.bottomOrnament} />
+                        <View style={styles.leftOrnament} />
+                        <View style={styles.rightOrnament} />
+                    </View>
+
+                    <View style={styles.mushafTextContainer}>
+                        {(() => {
+                            const sections: any[] = [];
+                            let currentSection: any = null;
+
+                            item.ayahs.forEach((ayah, index) => {
+                                const isNewSurah = index === 0 || ayah.surah?.number !== item.ayahs[index - 1]?.surah?.number;
+                                if (isNewSurah) {
+                                    currentSection = {
+                                        surah: ayah.surah,
+                                        showBismillah: ayah.surah?.number !== 9 && ayah.numberInSurah === 1,
+                                        ayahs: []
+                                    };
+                                    sections.push(currentSection);
+                                }
+                                currentSection.ayahs.push(ayah);
+                            });
+
+                            return sections.map((section, sIndex) => (
+                                <View key={`section-${section.surah?.number}-${sIndex}`} style={{ width: '100%' }}>
+                                    <View style={styles.surahHeader}>
+                                        <Text style={styles.surahHeaderText}>{section.surah?.name}</Text>
+                                    </View>
+
+                                    {section.showBismillah && (
+                                        <Text style={styles.bismillahText}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</Text>
+                                    )}
+
+                                    <Text
+                                        style={[
+                                            styles.ayahText,
+                                            {
+                                                fontSize: dynamicFontSize,
+                                                lineHeight: dynamicLineHeight
+                                            }
+                                        ]}
+                                        textBreakStrategy="highQuality"
+                                    >
+                                        {section.ayahs.map((ayah: any) => {
+                                            const isSelected = selectedAyah?.number === ayah.number;
+                                            const ayahContent = ayah.text || ayah.text_uthmani || ayah.text_warsh || '';
+                                            return (
+                                                <Text
+                                                    key={ayah.number}
+                                                    onPress={() => handleAyahPress(ayah)}
+                                                    style={[isSelected && styles.selectedAyahText]}
+                                                >
+                                                    {ayahContent}{' '}
+                                                    <View style={styles.markerInlineContainer}>
+                                                        <AyahMarker number={ayah.numberInSurah} />
+                                                    </View>{' '}
+                                                </Text>
+                                            );
+                                        })}
+                                    </Text>
+                                </View>
+                            ));
+                        })()}
+                    </View>
+
+                    {/* Page Number */}
+                    <View style={styles.pageNumberBadge}>
+                        <Text style={styles.pageNumberText}>{item.pageNumber}</Text>
+                    </View>
                 </View>
             </View>
-        </View>
-    );
+        );
+    };
 
     if (loading && pages.length === 0) {
         return (
@@ -313,7 +290,7 @@ export default function ReadingScreen() {
             {/* Ayah Interaction Bottom Sheet */}
             <AyahBottomSheet
                 ref={bottomSheetRef}
-                ayah={selectedAyah}
+                ayah={selectedAyah as any}
                 surahNumber={selectedAyah?.surah?.number || 1}
                 surahName={selectedAyah?.surah?.name || ''}
                 onClose={() => setSelectedAyah(null)}
@@ -326,26 +303,23 @@ const styles = StyleSheet.create({
     pageContainer: {
         width: SCREEN_WIDTH,
         height: SCREEN_HEIGHT,
-        backgroundColor: '#F4F1EA', // Mushaf Paper Color
-        justifyContent: 'flex-start',
+        justifyContent: 'center',
         alignItems: 'center',
-        paddingTop: 110, // Optimized to start right after header
     },
     mushafPaper: {
-        width: SCREEN_WIDTH * 0.94,
-        height: (SCREEN_WIDTH * 0.94) * 1.52, // Fixed Aspect Ratio (~Mushaf Standard)
-        backgroundColor: '#FCF9F2',
-        borderRadius: 4,
-        padding: 4,
-        // Stronger, more elegant depth
-        shadowColor: '#3E2723',
+        backgroundColor: '#F9F7F2',
+        borderRadius: 12,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
-        elevation: 15,
+        shadowOpacity: 0.15,
+        shadowRadius: 15,
+        elevation: 8,
+        position: 'relative',
         overflow: 'hidden',
-        borderWidth: 1.5,
-        borderColor: '#D7CCC8',
+        borderWidth: 1,
+        borderColor: '#E8E1D0',
+        padding: 5,
+        marginTop: 40, // Space for header
     },
     imageContainer: {
         flex: 1,
@@ -354,7 +328,6 @@ const styles = StyleSheet.create({
     pageImage: {
         flex: 1,
         width: '100%',
-        contentFit: 'fill', // Ensure it fills the AR-compliant container
     },
     borderContainer: {
         ...StyleSheet.absoluteFillObject,
@@ -436,7 +409,7 @@ const styles = StyleSheet.create({
     headerContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: Spacing.m,
+        paddingHorizontal: Spacing.md,
         justifyContent: 'space-between',
     },
     headerTitleContainer: {
@@ -472,9 +445,59 @@ const styles = StyleSheet.create({
         backgroundColor: '#F4F1EA',
     },
     loadingText: {
-        marginTop: Spacing.m,
+        marginTop: Spacing.md,
         fontFamily: 'Amiri-Regular',
         fontSize: 18,
         color: Colors.text.secondary,
+    },
+    mushafTextContainer: {
+        flex: 1,
+        paddingHorizontal: 15,
+        paddingBottom: 40,
+        justifyContent: 'flex-start',
+        alignItems: 'center',
+    },
+    ayahText: {
+        fontFamily: 'Amiri-Regular',
+        textAlign: 'justify',
+        color: '#2D2D2D',
+        writingDirection: 'rtl',
+    },
+    markerInlineContainer: {
+        width: 30,
+        height: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    selectedAyahText: {
+        backgroundColor: 'rgba(212, 175, 55, 0.25)',
+    },
+    ayahMarker: {
+        fontFamily: 'Amiri-Bold',
+        fontSize: 16,
+        color: '#8A6E1D',
+    },
+    surahHeader: {
+        backgroundColor: '#F1EBDC',
+        borderWidth: 1,
+        borderColor: '#D4AF37',
+        paddingVertical: 6,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        marginVertical: 10,
+        alignItems: 'center',
+        alignSelf: 'center',
+    },
+    surahHeaderText: {
+        fontFamily: 'Amiri-Bold',
+        fontSize: 18,
+        color: '#1B5E20',
+    },
+    bismillahText: {
+        fontFamily: 'Amiri-Bold',
+        fontSize: 22,
+        textAlign: 'center',
+        marginVertical: 5,
+        color: '#2D2D2D',
     },
 });

@@ -9,17 +9,24 @@ interface AudioPlayerProps {
 }
 
 export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
-    const player = useAudioPlayer(audioUrl);
+    let player: any = null;
+    try {
+        player = useAudioPlayer(audioUrl);
+    } catch (e) {
+        console.warn('ExpoAudio module not found or failed to initialize', e);
+    }
+
     const [duration, setDuration] = useState(0);
 
     useEffect(() => {
         // Get duration when loaded
-        if (player.duration) {
+        if (player?.duration) {
             setDuration(player.duration);
         }
-    }, [player.duration]);
+    }, [player?.duration]);
 
     const handlePlayPause = () => {
+        if (!player) return;
         if (player.playing) {
             player.pause();
         } else {
@@ -33,7 +40,16 @@ export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
-    const progress = duration > 0 ? (player.currentTime / duration) * 100 : 0;
+    const currentTime = player?.currentTime || 0;
+    const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+    if (!player) {
+        return (
+            <View style={[styles.container, { opacity: 0.6 }]}>
+                <Text style={styles.timeText}>مشغل الصوت غير متاح حالياً</Text>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>

@@ -14,6 +14,14 @@ const STORAGE_KEYS = {
     BOOKMARKS: '@rattel:bookmarks',
 };
 
+const isStorageAvailable = () => {
+    if (!AsyncStorage) {
+        console.warn('AsyncStorage native module is null');
+        return false;
+    }
+    return true;
+};
+
 // Bookmark interface
 interface Bookmark {
     surahNumber: number;
@@ -28,6 +36,7 @@ interface Bookmark {
  * @returns {Promise<boolean>}
  */
 export const hasCompletedOnboarding = async (): Promise<boolean> => {
+    if (!isStorageAvailable()) return false;
     try {
         const value = await AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING_COMPLETE);
         return value === 'true';
@@ -42,6 +51,7 @@ export const hasCompletedOnboarding = async (): Promise<boolean> => {
  * @returns {Promise<void>}
  */
 export const setOnboardingComplete = async (): Promise<void> => {
+    if (!isStorageAvailable()) return;
     try {
         await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, 'true');
     } catch (error) {
@@ -63,6 +73,7 @@ interface LastRead {
  * @returns {Promise<LastRead | null>}
  */
 export const getLastRead = async (): Promise<LastRead | null> => {
+    if (!isStorageAvailable()) return null;
     try {
         const surah = await AsyncStorage.getItem(STORAGE_KEYS.LAST_READ_SURAH);
         const ayah = await AsyncStorage.getItem(STORAGE_KEYS.LAST_READ_AYAH);
@@ -95,6 +106,7 @@ export const setLastRead = async (
     ayahNumber: number,
     pageNumber: number = 1
 ): Promise<void> => {
+    if (!isStorageAvailable()) return;
     try {
         await AsyncStorage.multiSet([
             [STORAGE_KEYS.LAST_READ_SURAH, surahNumber.toString()],
@@ -111,6 +123,7 @@ export const setLastRead = async (
  * @returns {Promise<number>} Progress percentage (0-100)
  */
 export const getReadingProgress = async (): Promise<number> => {
+    if (!isStorageAvailable()) return 0;
     try {
         const value = await AsyncStorage.getItem(STORAGE_KEYS.READING_PROGRESS);
         return value ? parseFloat(value) : 0;
@@ -126,6 +139,7 @@ export const getReadingProgress = async (): Promise<number> => {
  * @returns {Promise<void>}
  */
 export const setReadingProgress = async (percentage: number): Promise<void> => {
+    if (!isStorageAvailable()) return;
     try {
         await AsyncStorage.setItem(STORAGE_KEYS.READING_PROGRESS, percentage.toString());
     } catch (error) {
@@ -138,6 +152,7 @@ export const setReadingProgress = async (percentage: number): Promise<void> => {
  * @returns {Promise<void>}
  */
 export const clearAllData = async (): Promise<void> => {
+    if (!isStorageAvailable()) return;
     try {
         await AsyncStorage.clear();
     } catch (error) {
@@ -150,6 +165,7 @@ export const clearAllData = async (): Promise<void> => {
  * @returns {Promise<Bookmark[]>} Array of bookmarked Ayahs
  */
 export const getBookmarks = async (): Promise<Bookmark[]> => {
+    if (!isStorageAvailable()) return [];
     try {
         const bookmarksJson = await AsyncStorage.getItem(STORAGE_KEYS.BOOKMARKS);
         return bookmarksJson ? JSON.parse(bookmarksJson) : [];
@@ -173,6 +189,7 @@ export const addBookmark = async (
     text: string,
     surahName: string
 ): Promise<void> => {
+    if (!isStorageAvailable()) return;
     try {
         const bookmarks = await getBookmarks();
 
@@ -208,6 +225,7 @@ export const removeBookmark = async (
     surahNumber: number,
     ayahNumber: number
 ): Promise<void> => {
+    if (!isStorageAvailable()) return;
     try {
         const bookmarks = await getBookmarks();
         const filtered = bookmarks.filter(
@@ -229,6 +247,7 @@ export const isBookmarked = async (
     surahNumber: number,
     ayahNumber: number
 ): Promise<boolean> => {
+    if (!isStorageAvailable()) return false;
     try {
         const bookmarks = await getBookmarks();
         return bookmarks.some(

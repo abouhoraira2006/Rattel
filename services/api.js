@@ -160,18 +160,20 @@ export const getAyahAudioUrl = (ayahNumber) => {
 export const fetchPageAyahs = async (pageNumber) => {
     try {
         const response = await apiClient.get(`/page/${pageNumber}/${WARSH_EDITION}`);
-        return response.data || []; // Return the array of ayahs directly
+        return response.data?.ayahs || []; // Return the array of ayahs directly
     } catch (error) {
         console.warn(`Warsh edition not found for page ${pageNumber}, falling back to Uthmani`);
         try {
             const response = await apiClient.get(`/page/${pageNumber}/quran-uthmani`);
-            return response.data || [];
+            return response.data?.ayahs || [];
         } catch (innerError) {
             console.error(`Error fetching page ${pageNumber}:`, innerError);
             throw innerError;
         }
     }
 };
+
+
 
 /**
  * Get the URL for a Mushaf page image
