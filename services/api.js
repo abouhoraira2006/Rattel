@@ -7,7 +7,7 @@ import axios from 'axios';
 
 // Base configuration
 const API_BASE_URL = 'https://api.alquran.cloud/v1';
-const WARSH_EDITION = 'quran-warsh'; // Warsh edition identifier
+const WARSH_EDITION = 'ar.warsh'; // Correct Alquran.cloud identifier for Warsh
 const TAFSIR_MUYASSAR = 'ar.muyassar'; // Al-Tafsir Al-Muyassar edition
 const AUDIO_BASE_URL = 'https://cdn.islamic.network/quran/audio/128/ar.alafasy';
 
@@ -160,10 +160,44 @@ export const getAyahAudioUrl = (ayahNumber) => {
 export const fetchPageAyahs = async (pageNumber) => {
     try {
         const response = await apiClient.get(`/page/${pageNumber}/${WARSH_EDITION}`);
+        return response.data || []; // Return the array of ayahs directly
+    } catch (error) {
+        console.warn(`Warsh edition not found for page ${pageNumber}, falling back to Uthmani`);
+        try {
+            const response = await apiClient.get(`/page/${pageNumber}/quran-uthmani`);
+            return response.data || [];
+        } catch (innerError) {
+            console.error(`Error fetching page ${pageNumber}:`, innerError);
+            throw innerError;
+        }
+    }
+};
+
+/**
+ * Get the URL for a Mushaf page image
+ * @param {number} pageNumber - Page number (1-604)
+ * @param {string} type - Mushaf type (default: 'uthmani')
+ * @returns {string} Image URL
+ */
+export const getPageImageUrl = (pageNumber) => {
+    // High-quality Mushaf page images from IslamDB
+    const paddedPage = pageNumber.toString().padStart(3, '0');
+    return `https://quran.islam-db.com/public/data/pages/quranpages_1024/images/page${paddedPage}.png`;
+};
+
+/**
+ * Fetch verse mapping/bounding boxes for a specific page
+ * @param {number} pageNumber - Page number (1-604)
+ * @returns {Promise<Object>} Mapping data
+ */
+export const fetchPageMapping = async (pageNumber) => {
+    // This endpoint provides coordinates for ayah highlighting
+    try {
+        const response = await axios.get(`https://api.quran.com/api/v4/verses/by_page/${pageNumber}?words=true&fields=line_number&word_fields=v2_page,line_number,location`);
         return response.data;
     } catch (error) {
-        console.error(`Error fetching page ${pageNumber}:`, error);
-        throw error;
+        console.error(`Error fetching mapping for page ${pageNumber}:`, error);
+        return null;
     }
 };
 
@@ -195,9 +229,9 @@ export const getDailyAyah = async () => {
 export default {
     fetchSurahList,
     fetchSurahWarsh,
-    fetchAyahDetail,
     fetchTafsirMuyassar,
     getAyahAudioUrl,
     getDailyAyah,
     fetchPageAyahs,
+    fetchPageMapping,
 };

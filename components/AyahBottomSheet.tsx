@@ -37,14 +37,18 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
         const [showAudio, setShowAudio] = useState(false);
 
         const snapPoints = useMemo(() => ['25%', '50%', '90%'], []);
-        const audioUrl = useMemo(() => getAyahAudioUrl(ayah.number), [ayah.number]);
+        const audioUrl = useMemo(() => ayah ? getAyahAudioUrl(ayah.number) : '', [ayah?.number]);
 
+        
         useEffect(() => {
-            loadTafsir();
-            checkBookmarkStatus();
-        }, [ayah.number]);
+            if (ayah) {
+                loadTafsir();
+                checkBookmarkStatus();
+            }
+        }, [ayah?.number]);
 
         const loadTafsir = async () => {
+            if (!ayah) return;
             try {
                 setLoadingTafsir(true);
                 const tafsirText = await fetchTafsirMuyassar(surahNumber, ayah.numberInSurah);
@@ -58,6 +62,7 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
         };
 
         const checkBookmarkStatus = async () => {
+            if (!ayah) return;
             const status = await isBookmarked(surahNumber, ayah.numberInSurah);
             setBookmarked(status);
         };
@@ -104,119 +109,127 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
                 handleIndicatorStyle={styles.handleIndicator}
             >
                 <BottomSheetView style={styles.contentContainer}>
-                    {/* Header */}
-                    <View style={styles.header}>
-                        <Pressable onPress={onClose} style={styles.closeButton}>
-                            <X size={24} color={Colors.text.primary} strokeWidth={2} />
-                        </Pressable>
-                        <Text style={styles.headerTitle}>
-                            {surahName} - {ayah.numberInSurah}
-                        </Text>
-                        <View style={{ width: 40 }} />
-                    </View>
-
-                    <ScrollView
-                        style={styles.scrollView}
-                        contentContainerStyle={styles.scrollContent}
-                        showsVerticalScrollIndicator={true}
-                        nestedScrollEnabled={true}
-                    >
-                        {/* Ayah Number Display */}
-                        <View style={styles.ayahNumberDisplay}>
-                            <Text style={styles.ayahSymbolDecoration}>۞</Text>
-                            <View style={styles.ayahNumberContainer}>
-                                <Text style={styles.ayahNumberText}>
-                                    {convertToArabicNumerals(ayah.numberInSurah)}
+                    {ayah ? (
+                        <>
+                            {/* Header */}
+                            <View style={styles.header}>
+                                <Pressable onPress={onClose} style={styles.closeButton}>
+                                    <X size={24} color={Colors.text.primary} strokeWidth={2} />
+                                </Pressable>
+                                <Text style={styles.headerTitle}>
+                                    {surahName} - {ayah.numberInSurah}
                                 </Text>
+                                <View style={{ width: 40 }} />
                             </View>
-                        </View>
 
-                        {/* Ayah Text */}
-                        <View style={styles.ayahSection}>
-                            <Text style={styles.ayahText}>{ayah.text}</Text>
-                        </View>
-
-                        {/* Action Buttons */}
-                        <View style={styles.actionsRow}>
-                            <Pressable
-                                onPress={handleBookmarkToggle}
-                                style={({ pressed }) => [
-                                    styles.actionButton,
-                                    bookmarked && styles.actionButtonActive,
-                                    pressed && styles.actionButtonPressed,
-                                ]}
+                            <ScrollView
+                                style={styles.scrollView}
+                                contentContainerStyle={styles.scrollContent}
+                                showsVerticalScrollIndicator={true}
+                                nestedScrollEnabled={true}
                             >
-                                <Heart
-                                    size={20}
-                                    color={bookmarked ? Colors.text.inverse : Colors.primary}
-                                    strokeWidth={2}
-                                    fill={bookmarked ? Colors.primary : 'none'}
-                                />
-                                <Text
-                                    style={[
-                                        styles.actionButtonText,
-                                        bookmarked && styles.actionButtonTextActive,
-                                    ]}
-                                >
-                                    {bookmarked ? 'محفوظة' : 'حفظ'}
-                                </Text>
-                            </Pressable>
-
-                            <Pressable
-                                onPress={handleAudioToggle}
-                                style={({ pressed }) => [
-                                    styles.actionButton,
-                                    showAudio && styles.actionButtonActive,
-                                    pressed && styles.actionButtonPressed,
-                                ]}
-                            >
-                                <Volume2
-                                    size={20}
-                                    color={showAudio ? Colors.text.inverse : Colors.primary}
-                                    strokeWidth={2}
-                                />
-                                <Text
-                                    style={[
-                                        styles.actionButtonText,
-                                        showAudio && styles.actionButtonTextActive,
-                                    ]}
-                                >
-                                    استماع
-                                </Text>
-                            </Pressable>
-
-                            <Pressable
-                                onPress={handleShare}
-                                style={({ pressed }) => [
-                                    styles.actionButton,
-                                    pressed && styles.actionButtonPressed,
-                                ]}
-                            >
-                                <Share2 size={20} color={Colors.primary} strokeWidth={2} />
-                                <Text style={styles.actionButtonText}>مشاركة</Text>
-                            </Pressable>
-                        </View>
-
-                        {/* Audio Player */}
-                        {showAudio && (
-                            <View style={styles.audioSection}>
-                                <AudioPlayer audioUrl={audioUrl} />
-                            </View>
-                        )}
-
-                        {/* Tafsir Section */}
-                        <View style={styles.tafsirSection}>
-                            <Text style={styles.sectionTitle}>التفسير الميسّر</Text>
-                            {loadingTafsir ? (
-                                <View style={styles.tafsirLoading}>
-                                    <ActivityIndicator size="small" color={Colors.primary} />
-                                    <Text style={styles.tafsirLoadingText}>جاري تحميل التفسير...</Text>
+                                {/* Ayah Number Display */}
+                                <View style={styles.ayahNumberDisplay}>
+                                    <Text style={styles.ayahSymbolDecoration}>۞</Text>
+                                    <View style={styles.ayahNumberContainer}>
+                                        <Text style={styles.ayahNumberText}>
+                                            {convertToArabicNumerals(ayah.numberInSurah)}
+                                        </Text>
+                                    </View>
                                 </View>
-                            ) : (
-                                <Text style={styles.tafsirText}>{tafsir}</Text>
-                            )}
+
+                                {/* Ayah Text */}
+                                <View style={styles.ayahSection}>
+                                    <Text style={styles.ayahText}>{ayah.text}</Text>
+                                </View>
+
+                                {/* Action Buttons */}
+                                <View style={styles.actionsRow}>
+                                    <Pressable
+                                        onPress={handleBookmarkToggle}
+                                        style={({ pressed }) => [
+                                            styles.actionButton,
+                                            bookmarked && styles.actionButtonActive,
+                                            pressed && styles.actionButtonPressed,
+                                        ]}
+                                    >
+                                        <Heart
+                                            size={20}
+                                            color={bookmarked ? Colors.text.inverse : Colors.primary}
+                                            strokeWidth={2}
+                                            fill={bookmarked ? Colors.primary : 'none'}
+                                        />
+                                        <Text
+                                            style={[
+                                                styles.actionButtonText,
+                                                bookmarked && styles.actionButtonTextActive,
+                                            ]}
+                                        >
+                                            {bookmarked ? 'محفوظة' : 'حفظ'}
+                                        </Text>
+                                    </Pressable>
+
+                                    <Pressable
+                                        onPress={handleAudioToggle}
+                                        style={({ pressed }) => [
+                                            styles.actionButton,
+                                            showAudio && styles.actionButtonActive,
+                                            pressed && styles.actionButtonPressed,
+                                        ]}
+                                    >
+                                        <Volume2
+                                            size={20}
+                                            color={showAudio ? Colors.text.inverse : Colors.primary}
+                                            strokeWidth={2}
+                                        />
+                                        <Text
+                                            style={[
+                                                styles.actionButtonText,
+                                                showAudio && styles.actionButtonTextActive,
+                                            ]}
+                                        >
+                                            استماع
+                                        </Text>
+                                    </Pressable>
+
+                                    <Pressable
+                                        onPress={handleShare}
+                                        style={({ pressed }) => [
+                                            styles.actionButton,
+                                            pressed && styles.actionButtonPressed,
+                                        ]}
+                                    >
+                                        <Share2 size={20} color={Colors.primary} strokeWidth={2} />
+                                        <Text style={styles.actionButtonText}>مشاركة</Text>
+                                    </Pressable>
+                                </View>
+
+                                {/* Audio Player */}
+                                {showAudio && (
+                                    <View style={styles.audioSection}>
+                                        <AudioPlayer audioUrl={audioUrl} />
+                                    </View>
+                                )}
+
+                                {/* Tafsir Section */}
+                                <View style={styles.tafsirSection}>
+                                    <Text style={styles.sectionTitle}>التفسير الميسّر</Text>
+                                    {loadingTafsir ? (
+                                        <View style={styles.tafsirLoading}>
+                                            <ActivityIndicator size="small" color={Colors.primary} />
+                                            <Text style={styles.tafsirLoadingText}>جاري تحميل التفسير...</Text>
+                                        </View>
+                                    ) : (
+                                        <Text style={styles.tafsirText}>{tafsir}</Text>
+                                    )}
+                                </View>
+                            </ScrollView>
+                        </>
+                    ) : (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="small" color={Colors.primary} />
                         </View>
-                    </ScrollView>
+                    )}
                 </BottomSheetView>
             </BottomSheet>
         );
@@ -380,5 +393,10 @@ const styles = StyleSheet.create({
         textAlign: 'right',
         writingDirection: 'rtl',
         lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.base,
+    },
+    loadingContainer: {
+        height: 200,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });
