@@ -3,14 +3,13 @@ import { BorderRadius, Colors, Shadows, Spacing, Typography } from '@/constants/
 import { fetchTafsirMuyassar, getAyahAudioUrl } from '@/services/api';
 import { shareAyahText } from '@/utils/share';
 import { addBookmark, isBookmarked, removeBookmark } from '@/utils/storage';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import { Heart, Share2, Volume2, X } from 'lucide-react-native';
 import { forwardRef, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Pressable,
-    ScrollView,
     StyleSheet,
     Text,
     View,
@@ -39,7 +38,7 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
         const snapPoints = useMemo(() => ['25%', '50%', '90%'], []);
         const audioUrl = useMemo(() => ayah ? getAyahAudioUrl(ayah.number) : '', [ayah?.number]);
 
-        
+
         useEffect(() => {
             if (ayah) {
                 loadTafsir();
@@ -122,11 +121,10 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
                                 <View style={{ width: 40 }} />
                             </View>
 
-                            <ScrollView
+                            <BottomSheetScrollView
                                 style={styles.scrollView}
                                 contentContainerStyle={styles.scrollContent}
                                 showsVerticalScrollIndicator={true}
-                                nestedScrollEnabled={true}
                             >
                                 {/* Ayah Number Display */}
                                 <View style={styles.ayahNumberDisplay}>
@@ -223,7 +221,7 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
                                         <Text style={styles.tafsirText}>{tafsir}</Text>
                                     )}
                                 </View>
-                            </ScrollView>
+                            </BottomSheetScrollView>
                         </>
                     ) : (
                         <View style={styles.loadingContainer}>

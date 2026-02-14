@@ -21,17 +21,25 @@ const apiClient = axios.create({
 });
 
 /**
- * Normalizes Arabic text by removing diacritics (tashkeel)
+ * Normalizes Arabic text by removing diacritics (tashkeel) and standardizing characters
  * @param {string} text 
  * @returns {string} Normalized text
  */
 export const normalizeArabic = (text) => {
     if (!text) return '';
     return text
-        .replace(/[\u064B-\u0652\u0670\u0640]/g, '') // Remove tashkeel and tatweel
-        .replace(/[أإآ]/g, 'ا') // Normalize Alif
-        .replace(/ة/g, 'ه') // Normalize Teh Marbuta
-        .replace(/ى/g, 'ي') // Normalize Alif Maksura
+        // Remove diacritics (tashkeel)
+        .replace(/[\u064B-\u0652\u0670\u0640]/g, '')
+        // Normalize Alifs
+        .replace(/[أإآٱ]/g, 'ا')
+        // Normalize Teh Marbuta
+        .replace(/ة/g, 'ه')
+        // Normalize Alif Maksura
+        .replace(/ى/g, 'ي')
+        // Normalize different types of Hamzas to a simple Alif where appropriate, 
+        // or just leave them if they are part of a word's radical.
+        // For search purposes, mapping them to Alif is often most helpful.
+        .replace(/[ؤئ]/g, 'ء')
         .trim();
 };
 

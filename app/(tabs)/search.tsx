@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         borderLeftWidth: 3,
         borderLeftColor: Colors.primary,
-        maxHeight: 250, // Limit height and enable scrolling
+        maxHeight: 350, // Increased height for better visibility
     },
     tafsirScroll: {
         flexGrow: 0,
