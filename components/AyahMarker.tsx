@@ -9,7 +9,7 @@ interface AyahMarkerProps {
 const AyahMarker: React.FC<AyahMarkerProps> = ({ number }) => {
     return (
         <View style={styles.container}>
-            <Svg width="32" height="32" viewBox="0 0 36 36">
+            <Svg width="24" height="24" viewBox="0 0 36 36">
                 <G transform="translate(18, 18)">
                     {/* Main Outer Decorative Shape (8-pointed star/circle) */}
                     <Path
@@ -37,13 +37,12 @@ const AyahMarker: React.FC<AyahMarkerProps> = ({ number }) => {
 
 const styles = StyleSheet.create({
     container: {
-        width: 36,
-        height: 36,
+        width: 28,
+        height: 28,
         justifyContent: 'center',
         alignItems: 'center',
-        marginHorizontal: 4,
-        // Ensure it sits well inside the text line
-        top: 6,
+        marginHorizontal: 3,
+        // Centered vertically within text line
     },
     numberContainer: {
         ...StyleSheet.absoluteFillObject,
@@ -52,11 +51,10 @@ const styles = StyleSheet.create({
     },
     numberText: {
         fontFamily: 'Amiri-Bold',
-        fontSize: 10,
+        fontSize: 8,
         color: '#8A6E1D',
         textAlign: 'center',
-        // Small adjustment to center visually for Arabic fonts
-        marginTop: -2,
+        marginTop: -1,
     },
 });
 

@@ -1,20 +1,74 @@
 import { Colors } from '@/constants/theme';
-import { hasCompletedOnboarding } from '@/utils/storage';
+import { hasCompletedOnboarding, setOnboardingComplete as markOnboardingComplete } from '@/utils/storage';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
+
+// Auth Context for Onboarding/Session
+const AuthContext = createContext<{
+  onboardingComplete: boolean;
+  completeOnboarding: () => Promise<void>;
+  isLoading: boolean;
+}>({
+  onboardingComplete: false,
+  completeOnboarding: async () => { },
+  isLoading: true,
+});
+
+export const useSession = () => useContext(AuthContext);
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  return (
+    <SessionProvider>
+      <AppContent />
+    </SessionProvider>
+  );
+}
+
+function SessionProvider({ children }: { children: React.ReactNode }) {
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function checkStatus() {
+      try {
+        const status = await hasCompletedOnboarding();
+        setOnboardingComplete(status);
+      } catch (e) {
+        console.warn('Error checking onboarding status:', e);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    checkStatus();
+  }, []);
+
+  const completeOnboarding = async () => {
+    try {
+      await markOnboardingComplete();
+      setOnboardingComplete(true);
+    } catch (e) {
+      console.error('Error marking onboarding complete:', e);
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ onboardingComplete, completeOnboarding, isLoading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+function AppContent() {
   const router = useRouter();
   const segments = useSegments();
-  const [appIsReady, setAppIsReady] = useState(false);
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const { onboardingComplete, isLoading } = useSession();
 
   // Load custom fonts
   const [fontsLoaded, fontError] = useFonts({
@@ -23,38 +77,20 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    async function prepare() {
-      try {
-        // Check if onboarding is complete
-        const hasSeenOnboarding = await hasCompletedOnboarding();
-        setOnboardingComplete(hasSeenOnboarding);
-      } catch (e) {
-        console.warn('Error loading app data:', e);
-      } finally {
-        setAppIsReady(true);
-      }
-    }
-
-    prepare();
-  }, []);
-
-  useEffect(() => {
     if (fontError) {
       console.error('Error loading fonts:', fontError);
-      throw fontError;
     }
   }, [fontError]);
 
   useEffect(() => {
-    // When fonts are loaded and app is ready, hide splash screen
-    if (fontsLoaded && appIsReady) {
+    if (fontsLoaded && !isLoading) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, appIsReady]);
+  }, [fontsLoaded, isLoading]);
 
   useEffect(() => {
     // Handle initial routing based on onboarding status
-    if (fontsLoaded && appIsReady) {
+    if (fontsLoaded && !isLoading) {
       const inOnboarding = segments[0] === 'onboarding';
 
       if (!onboardingComplete && !inOnboarding) {
@@ -65,10 +101,10 @@ export default function RootLayout() {
         router.replace('/(tabs)');
       }
     }
-  }, [fontsLoaded, appIsReady, onboardingComplete, segments]);
+  }, [fontsLoaded, isLoading, onboardingComplete, segments]);
 
   // Don't render anything until fonts are loaded
-  if (!fontsLoaded || !appIsReady) {
+  if (!fontsLoaded || isLoading) {
     return null;
   }
 

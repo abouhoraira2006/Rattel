@@ -14,6 +14,7 @@ import {
     Dimensions,
     FlatList,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     View,
@@ -146,7 +147,7 @@ export default function ReadingScreen() {
     const baseHeight = 844;
     const scaleFactor = windowHeight / baseHeight;
     const dynamicFontSize = Math.max(16, Math.min(22, 19 * scaleFactor));
-    const dynamicLineHeight = dynamicFontSize * 1.85;
+    const dynamicLineHeight = dynamicFontSize * 2.1; // Increased for better spacing
 
     const renderPage = ({ item }: { item: PageData }) => {
         return (
@@ -160,68 +161,73 @@ export default function ReadingScreen() {
                         <View style={styles.rightOrnament} />
                     </View>
 
-                    <View style={styles.mushafTextContainer}>
-                        {(() => {
-                            const sections: any[] = [];
-                            let currentSection: any = null;
+                    <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.mushafScrollContent}
+                    >
+                        <View style={styles.mushafTextContainer}>
+                            {(() => {
+                                const sections: any[] = [];
+                                let currentSection: any = null;
 
-                            item.ayahs.forEach((ayah, index) => {
-                                const isNewSurah = index === 0 || ayah.surah?.number !== item.ayahs[index - 1]?.surah?.number;
-                                if (isNewSurah) {
-                                    currentSection = {
-                                        surah: ayah.surah,
-                                        showBismillah: ayah.surah?.number !== 9 && ayah.numberInSurah === 1,
-                                        ayahs: []
-                                    };
-                                    sections.push(currentSection);
-                                }
-                                currentSection.ayahs.push(ayah);
-                            });
+                                item.ayahs.forEach((ayah, index) => {
+                                    const isNewSurah = index === 0 || ayah.surah?.number !== item.ayahs[index - 1]?.surah?.number;
+                                    if (isNewSurah) {
+                                        currentSection = {
+                                            surah: ayah.surah,
+                                            showBismillah: ayah.surah?.number !== 9 && ayah.numberInSurah === 1,
+                                            ayahs: []
+                                        };
+                                        sections.push(currentSection);
+                                    }
+                                    currentSection.ayahs.push(ayah);
+                                });
 
-                            return sections.map((section, sIndex) => (
-                                <View key={`section-${section.surah?.number}-${sIndex}`} style={{ width: '100%' }}>
-                                    <View style={styles.surahHeader}>
-                                        <Text style={styles.surahHeaderText}>{section.surah?.name}</Text>
+                                return sections.map((section, sIndex) => (
+                                    <View key={`section-${section.surah?.number}-${sIndex}`} style={{ width: '100%' }}>
+                                        <View style={styles.surahHeader}>
+                                            <Text style={styles.surahHeaderText}>{section.surah?.name}</Text>
+                                        </View>
+
+                                        {section.showBismillah && (
+                                            <Text style={styles.bismillahText}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</Text>
+                                        )}
+
+                                        <Text
+                                            style={[
+                                                styles.ayahText,
+                                                {
+                                                    fontSize: dynamicFontSize,
+                                                    lineHeight: dynamicLineHeight
+                                                }
+                                            ]}
+                                            textBreakStrategy="highQuality"
+                                        >
+                                            {section.ayahs.map((ayah: any) => {
+                                                const isSelected = selectedAyah?.number === ayah.number;
+                                                const ayahContent = ayah.text || ayah.text_uthmani || ayah.text_warsh || '';
+                                                return (
+                                                    <Text
+                                                        key={ayah.number}
+                                                        onPress={() => handleAyahPress(ayah)}
+                                                        style={[isSelected && styles.selectedAyahText]}
+                                                    >
+                                                        {ayahContent}{' '}
+                                                        <View style={styles.markerInlineContainer}>
+                                                            <AyahMarker number={ayah.numberInSurah} />
+                                                        </View>{' '}
+                                                    </Text>
+                                                );
+                                            })}
+                                        </Text>
                                     </View>
-
-                                    {section.showBismillah && (
-                                        <Text style={styles.bismillahText}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</Text>
-                                    )}
-
-                                    <Text
-                                        style={[
-                                            styles.ayahText,
-                                            {
-                                                fontSize: dynamicFontSize,
-                                                lineHeight: dynamicLineHeight
-                                            }
-                                        ]}
-                                        textBreakStrategy="highQuality"
-                                    >
-                                        {section.ayahs.map((ayah: any) => {
-                                            const isSelected = selectedAyah?.number === ayah.number;
-                                            const ayahContent = ayah.text || ayah.text_uthmani || ayah.text_warsh || '';
-                                            return (
-                                                <Text
-                                                    key={ayah.number}
-                                                    onPress={() => handleAyahPress(ayah)}
-                                                    style={[isSelected && styles.selectedAyahText]}
-                                                >
-                                                    {ayahContent}{' '}
-                                                    <View style={styles.markerInlineContainer}>
-                                                        <AyahMarker number={ayah.numberInSurah} />
-                                                    </View>{' '}
-                                                </Text>
-                                            );
-                                        })}
-                                    </Text>
-                                </View>
-                            ));
-                        })()}
-                    </View>
+                                ));
+                            })()}
+                        </View>
+                    </ScrollView>
 
                     {/* Page Number */}
-                    <View style={styles.pageNumberBadge}>
+                    <View style={[styles.pageNumberBadge, { bottom: 15 }]}>
                         <Text style={styles.pageNumberText}>{item.pageNumber}</Text>
                     </View>
                 </View>
@@ -450,10 +456,14 @@ const styles = StyleSheet.create({
         fontSize: 18,
         color: Colors.text.secondary,
     },
+    mushafScrollContent: {
+        flexGrow: 1,
+    },
     mushafTextContainer: {
         flex: 1,
         paddingHorizontal: 15,
-        paddingBottom: 40,
+        paddingTop: 30, // Space from top ornament
+        paddingBottom: 80, // Generous padding to clear page number even when scrolled
         justifyContent: 'flex-start',
         alignItems: 'center',
     },

@@ -1,5 +1,4 @@
 import { BorderRadius, Colors, Spacing, Typography } from '@/constants/theme';
-import { setOnboardingComplete } from '@/utils/storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { BookOpen, Heart, Sparkles } from 'lucide-react-native';
@@ -15,6 +14,7 @@ import {
     View,
     ViewToken,
 } from 'react-native';
+import { useSession } from '../_layout';
 
 const { width, height } = Dimensions.get('window');
 
@@ -56,6 +56,7 @@ const ONBOARDING_PAGES: OnboardingPage[] = [
 
 export default function OnboardingScreen() {
     const router = useRouter();
+    const { completeOnboarding } = useSession();
     const [currentIndex, setCurrentIndex] = useState(0);
     const flatListRef = useRef<FlatList>(null);
 
@@ -71,8 +72,10 @@ export default function OnboardingScreen() {
 
     const handleGetStarted = async () => {
         try {
-            await setOnboardingComplete();
-            router.replace('/(tabs)');
+            await completeOnboarding();
+            // router.replace is handled by the RootLayout useEffect but we can also do it here 
+            // to ensure immediate feedback if needed, but RootLayout will handle the redirect 
+            // as soon as onboardingComplete becomes true.
         } catch (error) {
             console.error('Error completing onboarding:', error);
         }
@@ -84,7 +87,7 @@ export default function OnboardingScreen() {
         return (
             <View style={styles.page}>
                 <LinearGradient
-                    colors={item.gradient}
+                    colors={item.gradient as any}
                     style={styles.gradientContainer}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
