@@ -1,6 +1,6 @@
 import { Colors, Typography } from '@/constants/theme';
 import { Tabs } from 'expo-router';
-import { BookOpen, Bookmark, Search } from 'lucide-react-native';
+import { BookOpen, Bookmark, Headphones } from 'lucide-react-native';
 import { Platform } from 'react-native';
 
 export default function TabLayout() {
@@ -65,16 +65,24 @@ export default function TabLayout() {
                     ),
                 }}
             />
-        
+
+            <Tabs.Screen
+                name="listen"
+                options={{
+                    title: 'Listen',
+                    headerShown: false,
+                    tabBarIcon: ({ color, size }) => (
+                        <Headphones size={size} color={color} strokeWidth={2} />
+
+                    ),
+                }}
+            />
+
+            {/* Hide search tab but keep file for future use */}
             <Tabs.Screen
                 name="search"
                 options={{
-                    title: 'Search',
-                    headerShown: false,
-                    tabBarIcon: ({ color, size }) => (
-                        <Search size={size} color={color} strokeWidth={2} />
-
-                    ),
+                    href: null, // Hide from tabs
                 }}
             />
         </Tabs>

@@ -1,18 +1,18 @@
 import AudioPlayer from '@/components/AudioPlayer';
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '@/constants/theme';
-import { fetchTafsirMuyassar, getAyahAudioUrl } from '@/services/api';
-import { shareAyahText } from '@/utils/share';
-import { addBookmark, isBookmarked, removeBookmark } from '@/utils/storage';
+import { TAFSIRS, fetchTafsir } from '@/services/api';
+import { STORAGE_KEYS, addBookmark, getPreference, isBookmarked, removeBookmark, setPreference } from '@/utils/storage';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { Heart, Share2, Volume2, X } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { ChevronDown, Eye, EyeOff, Heart, Maximize2, Volume2, X } from 'lucide-react-native';
 import { forwardRef, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Pressable,
     StyleSheet,
     Text,
-    View,
+    View
 } from 'react-native';
 
 interface Ayah {
@@ -30,27 +30,39 @@ interface AyahBottomSheetProps {
 
 const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
     ({ ayah, surahNumber, surahName, onClose }, ref) => {
+        const router = useRouter();
         const [tafsir, setTafsir] = useState<string>('');
+        const [tafsirId, setTafsirId] = useState<string>('ar.muyassar');
         const [loadingTafsir, setLoadingTafsir] = useState(true);
         const [bookmarked, setBookmarked] = useState(false);
         const [showAudio, setShowAudio] = useState(false);
+        const [showTafsirs, setShowTafsirs] = useState(false);
+        const [showAyahText, setShowAyahText] = useState(true);
 
         const snapPoints = useMemo(() => ['25%', '50%', '90%'], []);
-        const audioUrl = useMemo(() => ayah ? getAyahAudioUrl(ayah.number) : '', [ayah?.number]);
-
 
         useEffect(() => {
             if (ayah) {
-                loadTafsir();
-                checkBookmarkStatus();
+                const loadInitialData = async () => {
+                    const savedTafsir = await getPreference(STORAGE_KEYS.SELECTED_TAFSIR, 'ar.muyassar');
+                    setTafsirId(savedTafsir);
+                    checkBookmarkStatus();
+                };
+                loadInitialData();
             }
         }, [ayah?.number]);
+
+        useEffect(() => {
+            if (ayah && tafsirId) {
+                loadTafsir();
+            }
+        }, [ayah?.number, tafsirId]);
 
         const loadTafsir = async () => {
             if (!ayah) return;
             try {
                 setLoadingTafsir(true);
-                const tafsirText = await fetchTafsirMuyassar(surahNumber, ayah.numberInSurah);
+                const tafsirText = await fetchTafsir(surahNumber, ayah.numberInSurah, tafsirId);
                 setTafsir(tafsirText);
             } catch (error) {
                 console.error('Error loading Tafsir:', error);
@@ -58,6 +70,12 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
             } finally {
                 setLoadingTafsir(false);
             }
+        };
+
+        const handleTafsirChange = async (id: string) => {
+            setTafsirId(id);
+            setShowTafsirs(false);
+            await setPreference(STORAGE_KEYS.SELECTED_TAFSIR, id);
         };
 
         const checkBookmarkStatus = async () => {
@@ -78,14 +96,25 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
             }
         };
 
-        const handleShare = async () => {
-            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            await shareAyahText(ayah.text, surahName, surahNumber, ayah.numberInSurah);
-        };
 
         const handleAudioToggle = () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setShowAudio(!showAudio);
+        };
+
+        const handleExpand = () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            onClose();
+            router.push({
+                pathname: '/ayah-details',
+                params: {
+                    surahNumber: surahNumber.toString(),
+                    ayahNumberInSurah: ayah.numberInSurah.toString(),
+                    globalAyahNumber: ayah.number.toString(),
+                    surahName: surahName,
+                    ayahText: ayah.text
+                }
+            });
         };
 
         const renderBackdrop = (props: any) => (
@@ -136,10 +165,12 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
                                     </View>
                                 </View>
 
-                                {/* Ayah Text */}
-                                <View style={styles.ayahSection}>
-                                    <Text style={styles.ayahText}>{ayah.text}</Text>
-                                </View>
+                                {/* Ayah Text - Toggleable */}
+                                {showAyahText && (
+                                    <View style={styles.ayahSection}>
+                                        <Text style={styles.ayahText}>{ayah.text}</Text>
+                                    </View>
+                                )}
 
                                 {/* Action Buttons */}
                                 <View style={styles.actionsRow}>
@@ -190,28 +221,92 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
                                         </Text>
                                     </Pressable>
 
+
                                     <Pressable
-                                        onPress={handleShare}
+                                        onPress={() => {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            setShowAyahText(!showAyahText);
+                                        }}
+                                        style={({ pressed }) => [
+                                            styles.actionButton,
+                                            showAyahText && styles.actionButtonActive,
+                                            pressed && styles.actionButtonPressed,
+                                        ]}
+                                    >
+                                        {showAyahText ? (
+                                            <EyeOff size={20} color={Colors.text.inverse} strokeWidth={2} />
+                                        ) : (
+                                            <Eye size={20} color={Colors.primary} strokeWidth={2} />
+                                        )}
+                                        <Text style={[
+                                            styles.actionButtonText,
+                                            showAyahText && styles.actionButtonTextActive,
+                                        ]}>
+                                            {showAyahText ? 'إخفاء الآية' : 'عرض الآية'}
+                                        </Text>
+                                    </Pressable>
+
+                                    <Pressable
+                                        onPress={handleExpand}
                                         style={({ pressed }) => [
                                             styles.actionButton,
                                             pressed && styles.actionButtonPressed,
                                         ]}
                                     >
-                                        <Share2 size={20} color={Colors.primary} strokeWidth={2} />
-                                        <Text style={styles.actionButtonText}>مشاركة</Text>
+                                        <Maximize2 size={20} color={Colors.primary} strokeWidth={2} />
+                                        <Text style={styles.actionButtonText}>توسيع</Text>
                                     </Pressable>
                                 </View>
 
                                 {/* Audio Player */}
                                 {showAudio && (
                                     <View style={styles.audioSection}>
-                                        <AudioPlayer audioUrl={audioUrl} />
+                                        <AudioPlayer ayahNumber={ayah.number} />
                                     </View>
                                 )}
 
                                 {/* Tafsir Section */}
                                 <View style={styles.tafsirSection}>
-                                    <Text style={styles.sectionTitle}>التفسير الميسّر</Text>
+                                    <View style={styles.sectionHeader}>
+                                        <Text style={styles.sectionTitle}>التفسير</Text>
+                                        <Pressable
+                                            onPress={() => setShowTafsirs(!showTafsirs)}
+                                            style={styles.selectorToggle}
+                                        >
+                                            <Text style={styles.selectorText}>
+                                                {TAFSIRS.find(t => t.id === tafsirId)?.name || 'اختر التفسير'}
+                                            </Text>
+                                            <ChevronDown size={16} color={Colors.primary} />
+                                        </Pressable>
+                                    </View>
+
+                                    {showTafsirs && (
+                                        <View style={styles.optionsWrapper}>
+                                            {TAFSIRS.map((t) => (
+                                                <Pressable
+                                                    key={t.id}
+                                                    onPress={() => handleTafsirChange(t.id)}
+                                                    style={[
+                                                        styles.optionItem,
+                                                        tafsirId === t.id && styles.optionItemActive,
+                                                    ]}
+                                                >
+                                                    <Text style={[
+                                                        styles.optionText,
+                                                        tafsirId === t.id && styles.optionTextActive
+                                                    ]}>
+                                                        {t.name}
+                                                    </Text>
+                                                    {tafsirId === t.id && (
+                                                        <View style={styles.checkmark}>
+                                                            <Text style={styles.checkmarkText}>✓</Text>
+                                                        </View>
+                                                    )}
+                                                </Pressable>
+                                            ))}
+                                        </View>
+                                    )}
+
                                     {loadingTafsir ? (
                                         <View style={styles.tafsirLoading}>
                                             <ActivityIndicator size="small" color={Colors.primary} />
@@ -369,12 +464,64 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: Colors.borderLight,
     },
+    sectionHeader: {
+        flexDirection: 'row-reverse',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: Spacing.md,
+    },
     sectionTitle: {
         fontSize: Typography.fontSize.lg,
         fontFamily: Typography.fontFamily.amiriBold,
-        color: Colors.primary,
-        marginBottom: Spacing.md,
+        color: Colors.text.primary,
         textAlign: 'right',
+    },
+    selectorToggle: {
+        flexDirection: 'row-reverse',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: Colors.background,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+    },
+    selectorText: {
+        fontSize: 12,
+        fontFamily: Typography.fontFamily.amiriBold,
+        color: Colors.primary,
+    },
+    optionsWrapper: {
+        marginBottom: Spacing.md,
+        gap: Spacing.xs,
+    },
+    optionsScrollView: {
+        paddingHorizontal: 4,
+    },
+    optionItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.sm,
+        borderRadius: BorderRadius.md,
+        backgroundColor: Colors.background,
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+    },
+    optionItemActive: {
+        backgroundColor: 'rgba(212, 175, 55, 0.1)',
+        borderColor: Colors.primary,
+    },
+    optionText: {
+        fontSize: 12,
+        fontFamily: Typography.fontFamily.amiriRegular,
+        color: Colors.text.secondary,
+    },
+    optionTextActive: {
+        color: Colors.primary,
+        fontFamily: Typography.fontFamily.amiriBold,
     },
     tafsirLoading: {
         flexDirection: 'row',
@@ -395,6 +542,19 @@ const styles = StyleSheet.create({
         writingDirection: 'rtl',
         lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.base,
         paddingBottom: Spacing.xl, // Robust padding for the last lines
+    },
+    checkmark: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: Colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    checkmarkText: {
+        color: Colors.text.inverse,
+        fontSize: 12,
+        fontWeight: 'bold',
     },
     loadingContainer: {
         height: 200,

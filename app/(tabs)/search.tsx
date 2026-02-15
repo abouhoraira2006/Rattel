@@ -11,13 +11,13 @@ import {
     LayoutAnimation,
     Platform,
     Pressable,
-    SafeAreaView,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
-    View
+    View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface SearchResult {
     text: string;
@@ -25,7 +25,6 @@ interface SearchResult {
     surah: {
         number: number;
         name: string;
-        englishName: string;
     };
     page: number;
     tafsir?: string;

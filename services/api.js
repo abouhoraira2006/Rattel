@@ -9,7 +9,25 @@ import axios from 'axios';
 const API_BASE_URL = 'https://api.alquran.cloud/v1';
 const WARSH_EDITION = 'ar.warsh'; // Correct Alquran.cloud identifier for Warsh
 const TAFSIR_MUYASSAR = 'ar.muyassar'; // Al-Tafsir Al-Muyassar edition
-const AUDIO_BASE_URL = 'https://cdn.islamic.network/quran/audio/128/ar.alafasy';
+const AUDIO_BASE_URL = 'https://cdn.islamic.network/quran/audio/128';
+
+// Available Reciters (verified with Alquran.cloud API)
+export const RECITERS = [
+    { id: 'ar.alafasy', name: 'مشاري راشد العفاسي', subtext: 'مرتل' },
+    { id: 'ar.husary', name: 'محمود خليل الحصري', subtext: 'مرتل' },
+    { id: 'ar.minshawi', name: 'محمد صديق المنشاوي', subtext: 'مرتل' },
+    { id: 'ar.mahermuaiqly', name: 'ماهر المعيقلي', subtext: 'مرتل' },
+];
+
+
+// Available Tafsirs (verified with Alquran.cloud API)
+// Note: Ibn Kathir (ar.ibnkathir) is not available in Arabic on this API
+export const TAFSIRS = [
+    { id: 'ar.muyassar', name: 'التفسير الميسر' },
+    { id: 'ar.jalalayn', name: 'تفسير الجلالين' },
+    { id: 'ar.qurtubi', name: 'تفسير القرطبي' },
+    { id: 'ar.baghawi', name: 'تفسير البغوي' },
+];
 
 // Create Axios instance
 const apiClient = axios.create({
@@ -169,28 +187,33 @@ export const fetchAyahDetail = async (ayahKey) => {
 };
 
 /**
- * Fetch Tafsir Al-Muyassar for a specific Ayah
+ * Fetch a specific Tafsir for an Ayah
  * @param {number} surahNumber - Surah number (1-114)
  * @param {number} ayahNumber - Ayah number within the Surah
+ * @param {string} tafsirId - The identifier for the tafsir edition
  * @returns {Promise<string>} Tafsir text in Arabic
  */
-export const fetchTafsirMuyassar = async (surahNumber, ayahNumber) => {
+export const fetchTafsir = async (surahNumber, ayahNumber, tafsirId = TAFSIR_MUYASSAR) => {
     try {
-        const response = await apiClient.get(`/ayah/${surahNumber}:${ayahNumber}/${TAFSIR_MUYASSAR}`);
+        const response = await apiClient.get(`/ayah/${surahNumber}:${ayahNumber}/${tafsirId}`);
         return response.data.text || 'التفسير غير متوفر لهذه الآية';
     } catch (error) {
-        console.warn(`Tafsir not available for ${surahNumber}:${ayahNumber}`);
+        console.warn(`Tafsir ${tafsirId} not available for ${surahNumber}:${ayahNumber}`);
         return 'التفسير غير متوفر لهذه الآية';
     }
 };
 
+// Legacy support
+export const fetchTafsirMuyassar = (surahNumber, ayahNumber) => fetchTafsir(surahNumber, ayahNumber, TAFSIR_MUYASSAR);
+
 /**
  * Get audio URL for a specific Ayah
  * @param {number} ayahNumber - Global Ayah number (1-6236)
+ * @param {string} reciterId - The identifier for the reciter
  * @returns {string} Audio URL
  */
-export const getAyahAudioUrl = (ayahNumber) => {
-    return `${AUDIO_BASE_URL}/${ayahNumber}.mp3`;
+export const getAyahAudioUrl = (ayahNumber, reciterId = 'ar.alafasy') => {
+    return `${AUDIO_BASE_URL}/${reciterId}/${ayahNumber}.mp3`;
 };
 
 /**
@@ -253,39 +276,33 @@ export const fetchPageMapping = async (pageNumber) => {
 export const searchQuran = async (keyword) => {
     try {
         const normalizedKeyword = normalizeArabic(keyword);
+        // Using Quran.com API v4 for robust search
         const response = await axios.get(`https://api.quran.com/api/v4/search?q=${encodeURIComponent(normalizedKeyword)}&language=ar&size=20`);
 
         if (!response.data || !response.data.search || !response.data.search.results) return [];
 
-        // Fetch the full surah list once to get English names efficiently
-        const surahList = await fetchSurahList();
-
         const searchResults = await Promise.all(response.data.search.results.map(async (result) => {
             let page = 1;
-            let surahEnglishName = '';
+            let ayahFullText = result.text;
             const surahNumber = parseInt(result.verse_key.split(':')[0]);
-
-            // Find the English name from the pre-fetched list
-            const surahDetail = surahList.find(s => s.number === surahNumber);
-            if (surahDetail) {
-                surahEnglishName = surahDetail.englishName;
-            }
+            const ayahNumber = parseInt(result.verse_key.split(':')[1]);
 
             try {
-                // Fetch verse detail to get the page number for precise navigation
-                const detailResponse = await axios.get(`https://api.quran.com/api/v4/verses/by_key/${result.verse_key}?fields=page_number`);
-                page = detailResponse.data.verse.page_number;
-            } catch (pError) {
-                console.warn(`Could not fetch page for ${result.verse_key}`);
+                // Fetch the actual decorated verse text (with diacritics) for display
+                // We use indopak or uthmani for best visualization
+                const verseResponse = await axios.get(`https://api.quran.com/api/v4/verses/by_key/${result.verse_key}?text_uthmani=true&fields=page_number`);
+                ayahFullText = verseResponse.data.verse.text_uthmani;
+                page = verseResponse.data.verse.page_number;
+            } catch (vError) {
+                console.warn(`Could not fetch details for ${result.verse_key}`, vError);
             }
 
             return {
-                text: result.text.replace(/<(?:.|\n)*?>/gm, ''), // Strip any HTML tags
-                ayahNumber: parseInt(result.verse_key.split(':')[1]),
+                text: ayahFullText.replace(/<(?:.|\n)*?>/gm, ''), // Ensure no HTML
+                ayahNumber: ayahNumber,
                 surah: {
-                    number: parseInt(result.verse_key.split(':')[0]),
-                    name: result.surah_name || `سورة ${result.verse_key.split(':')[0]}`,
-                    englishName: '',
+                    number: surahNumber,
+                    name: result.surah_name || `سورة ${surahNumber}`,
                 },
                 page: page,
                 verseKey: result.verse_key
@@ -303,6 +320,8 @@ export const searchQuran = async (keyword) => {
  * Get a random daily Ayah
  * @returns {Promise<Object>} Random Ayah with text and metadata
  */
+
+
 export const getDailyAyah = async () => {
     try {
         // Use a famous Ayah or random selection
@@ -327,6 +346,7 @@ export const getDailyAyah = async () => {
 export default {
     fetchSurahList,
     fetchSurahWarsh,
+    fetchTafsir,
     fetchTafsirMuyassar,
     getAyahAudioUrl,
     getDailyAyah,
@@ -334,4 +354,6 @@ export default {
     fetchPageMapping,
     fetchSurahPage,
     searchQuran,
+    RECITERS,
+    TAFSIRS,
 };

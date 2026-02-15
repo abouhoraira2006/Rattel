@@ -5,13 +5,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Storage Keys
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
     ONBOARDING_COMPLETE: '@rattel:onboarding_complete',
     LAST_READ_SURAH: '@rattel:last_read_surah',
     LAST_READ_AYAH: '@rattel:last_read_ayah',
     LAST_READ_PAGE: '@rattel:last_read_page',
     READING_PROGRESS: '@rattel:reading_progress',
     BOOKMARKS: '@rattel:bookmarks',
+    SELECTED_RECITER: '@rattel:selected_reciter',
+    SELECTED_TAFSIR: '@rattel:selected_tafsir',
 };
 
 const isStorageAvailable = () => {
@@ -262,6 +264,38 @@ export const isBookmarked = async (
     }
 };
 
+/**
+ * Get a user preference
+ * @param {string} key - The key from STORAGE_KEYS
+ * @param {string} defaultValue - Default value if not found
+ * @returns {Promise<string>}
+ */
+export const getPreference = async (key: string, defaultValue: string): Promise<string> => {
+    if (!isStorageAvailable()) return defaultValue;
+    try {
+        const value = await AsyncStorage.getItem(key);
+        return value || defaultValue;
+    } catch (error) {
+        console.error(`Error getting preference ${key}:`, error);
+        return defaultValue;
+    }
+};
+
+/**
+ * Set a user preference
+ * @param {string} key - The key from STORAGE_KEYS
+ * @param {string} value - The value to store
+ * @returns {Promise<void>}
+ */
+export const setPreference = async (key: string, value: string): Promise<void> => {
+    if (!isStorageAvailable()) return;
+    try {
+        await AsyncStorage.setItem(key, value);
+    } catch (error) {
+        console.error(`Error setting preference ${key}:`, error);
+    }
+};
+
 export default {
     hasCompletedOnboarding,
     setOnboardingComplete,
@@ -274,4 +308,7 @@ export default {
     addBookmark,
     removeBookmark,
     isBookmarked,
+    getPreference,
+    setPreference,
+    STORAGE_KEYS,
 };
