@@ -92,12 +92,13 @@ function AppContent() {
     // Handle initial routing based on onboarding status
     if (fontsLoaded && !isLoading) {
       const inOnboarding = segments[0] === 'onboarding';
+      const atRoot = (segments as string[]).length === 0;
 
       if (!onboardingComplete && !inOnboarding) {
         // User hasn't completed onboarding, redirect to onboarding
         router.replace('/onboarding');
-      } else if (onboardingComplete && inOnboarding) {
-        // User has completed onboarding but is on onboarding screen, redirect to home
+      } else if (onboardingComplete && (inOnboarding || atRoot)) {
+        // User has completed onboarding, redirect to home if on onboarding or at root
         router.replace('/(tabs)');
       }
     }
