@@ -62,67 +62,107 @@ export default function ListenScreen() {
     });
     const lastFinishedAyahRef = useRef<string>(''); // Format: "surah-ayah"
     const lastTransitionTimeRef = useRef<number>(0);
+    const playerAPlayingKeyRef = useRef<string>('');
+    const playerBPlayingKeyRef = useRef<string>('');
+    const playerAHandledKeyRef = useRef<string>('');
+    const playerBHandledKeyRef = useRef<string>('');
+    const isTransitioningRef = useRef<boolean>(false);
 
+    
     // Range selection state
     const [showRangeModal, setShowRangeModal] = useState(false);
     const [activeTab, setActiveTab] = useState<'start' | 'end'>('start');
     const [playbackRange, setPlaybackRange] = useState<PlaybackRange>(playbackRangeRef.current);
 
-    // Track playback status for auto-next
+    // Track playback status for auto-next 
     const statusA = useAudioPlayerStatus(playerA);
     const statusB = useAudioPlayerStatus(playerB);
     const currentStatus = activePlayerIndex === 0 ? statusA : statusB;
 
     useEffect(() => {
-        if (currentStatus.didJustFinish && isPlaying) {
+        const currentKey = `${currentSurahRef.current}-${currentAyahRef.current}`;
+        const activeKeyRef = activePlayerIndex === 0 ? playerAPlayingKeyRef : playerBPlayingKeyRef;
+        const handledKeyRef = activePlayerIndex === 0 ? playerAHandledKeyRef : playerBHandledKeyRef;
+
+        if (currentStatus.didJustFinish && isPlaying &&
+            activeKeyRef.current === currentKey &&
+            handledKeyRef.current !== currentKey) {
+
+            console.log(`Transitioning: Player ${activePlayerIndex} finished ${currentKey}`);
+            handledKeyRef.current = currentKey; // Mark this specific player/key pair as handled
             handleAyahFinished();
         }
-    }, [currentStatus.didJustFinish]);
+    }, [currentStatus.didJustFinish, activePlayerIndex, isPlaying]);
 
     const handleAyahFinished = async () => {
-        const now = Date.now();
-        // Ignore events that happen too close together (stale status updates)
-        if (now - lastTransitionTimeRef.current < 800) {
-            console.log('Ignoring rapid finish event (stale logic protection)');
+        if (isTransitioningRef.current) {
+            console.log('Transition already in progress, ignoring.');
             return;
         }
+        isTransitioningRef.current = true;
 
-        const currentKey = `${currentSurahRef.current}-${currentAyahRef.current}`;
-        console.log(`Processing finish for: ${currentKey}`);
+        try {
+            const now = Date.now();
+            const currentKey = `${currentSurahRef.current}-${currentAyahRef.current}`;
+            console.log(`Processing finish for: ${currentKey}`);
 
-        const next = getNextAyah(currentSurahRef.current, currentAyahRef.current);
+            // 1. Explicitly stop the player that just finished
+            const finishedPlayer = activePlayerIndex === 0 ? playerA : playerB;
+            finishedPlayer.pause();
+            finishedPlayer.seekTo(0);
 
-        if (!next || !isWithinRange(next.surah, next.ayah, playbackRangeRef.current)) {
-            console.log('End of range reached.');
-            setIsPlaying(false);
-            return;
+            const next = getNextAyah(currentSurahRef.current, currentAyahRef.current);
+
+            if (!next || !isWithinRange(next.surah, next.ayah, playbackRangeRef.current)) {
+                console.log('End of range reached.');
+                setIsPlaying(false);
+                return;
+            }
+
+            console.log(`Moving to: ${next.surah}:${next.ayah}`);
+            lastTransitionTimeRef.current = now;
+            lastFinishedAyahRef.current = currentKey;
+
+            // 2. Clear current player key to prevent re-triggering
+            if (activePlayerIndex === 0) playerAPlayingKeyRef.current = 'IDLE';
+            else playerBPlayingKeyRef.current = 'IDLE';
+
+            // 3. Prepare new state
+            const newIndex = 1 - activePlayerIndex;
+            const newAyahKey = `${next.surah}-${next.ayah}`;
+
+            // Update refs BEFORE starting next player
+            currentSurahRef.current = next.surah;
+            currentAyahRef.current = next.ayah;
+
+            if (newIndex === 0) playerAPlayingKeyRef.current = newAyahKey;
+            else playerBPlayingKeyRef.current = newAyahKey;
+
+            // 4. Switch and Play
+            setActivePlayerIndex(newIndex);
+            const playerToStart = newIndex === 0 ? playerA : playerB;
+            playerToStart.play();
+
+            // 5. Update UI
+            setCurrentSurah(next.surah);
+            setCurrentAyah(next.ayah);
+
+            // 6. Persistence
+            await savePlaybackProgress({
+                currentSurah: next.surah,
+                currentAyah: next.ayah,
+                globalAyahNumber: calculateGlobalAyahNumber(next.surah, next.ayah),
+            });
+
+            // 7. Pre-load next
+            prepareNextAyah(next.surah, next.ayah, newIndex);
+
+        } finally {
+            // Short delay to allow audio state pulses to clear
+            setTimeout(() => {
+                isTransitioningRef.current = false;
+            }, 300);
         }
-
-        console.log(`Moving to: ${next.surah}:${next.ayah}`);
-        lastTransitionTimeRef.current = now;
-        lastFinishedAyahRef.current = currentKey;
-
-        // Update refs BEFORE playing
-        currentSurahRef.current = next.surah;
-        currentAyahRef.current = next.ayah;
-
-        // Switch to pre-loaded nextPlayer
-        setActivePlayerIndex(prev => 1 - prev);
-        nextPlayer.play();
-
-        // Update UI state
-        setCurrentSurah(next.surah);
-        setCurrentAyah(next.ayah);
-
-        // Save progress
-        await savePlaybackProgress({
-            currentSurah: next.surah,
-            currentAyah: next.ayah,
-            globalAyahNumber: calculateGlobalAyahNumber(next.surah, next.ayah),
-        });
-
-        // Prepare the NEXT next ayah in the new nextPlayer
-        prepareNextAyah(next.surah, next.ayah);
     };
 
     // Update progress periodically
@@ -172,9 +212,17 @@ export default function ListenScreen() {
             setLoading(true);
 
             const audioUrl = `https://cdn.islamic.network/quran/audio/128/${reciterIdRef.current}/${calculateGlobalAyahNumber(sNum, aNum)}.mp3`;
-            console.log(`Starting playback: ${audioUrl}`);
+            const ayahKey = `${sNum}-${aNum}`;
 
-            // Replace current player source
+            // Replace current player source and mark what it's playing
+            if (activePlayerIndex === 0) {
+                playerAPlayingKeyRef.current = ayahKey;
+                playerAHandledKeyRef.current = ''; // Reset handled status for this player to allow finish event
+            } else {
+                playerBPlayingKeyRef.current = ayahKey;
+                playerBHandledKeyRef.current = '';
+            }
+
             currentPlayer.replace(audioUrl);
             currentPlayer.play();
 
@@ -185,6 +233,7 @@ export default function ListenScreen() {
             // Update refs for logic
             currentSurahRef.current = sNum;
             currentAyahRef.current = aNum;
+            lastTransitionTimeRef.current = 0; // Reset guard for manual actions
 
             setIsPlaying(true);
 
@@ -209,12 +258,25 @@ export default function ListenScreen() {
         }
     };
 
-    const prepareNextAyah = (sNum: number, aNum: number) => {
+    const prepareNextAyah = (sNum: number, aNum: number, overrideActiveIndex?: number) => {
         const next = getNextAyah(sNum, aNum);
+        const activeIdx = overrideActiveIndex ?? activePlayerIndex;
+
         if (next && isWithinRange(next.surah, next.ayah, playbackRangeRef.current)) {
             const nextUrl = `https://cdn.islamic.network/quran/audio/128/${reciterIdRef.current}/${calculateGlobalAyahNumber(next.surah, next.ayah)}.mp3`;
-            console.log(`Pre-loading: ${nextUrl}`);
-            nextPlayer.replace(nextUrl);
+            const nextKey = `${next.surah}-${next.ayah}`;
+            console.log(`Pre-loading: ${nextUrl} for player ${1 - activeIdx}`);
+
+            // Mark what the next player will be responsible for
+            if (activeIdx === 0) {
+                playerBPlayingKeyRef.current = nextKey;
+                playerBHandledKeyRef.current = '';
+                playerB.replace(nextUrl);
+            } else {
+                playerAPlayingKeyRef.current = nextKey;
+                playerAHandledKeyRef.current = '';
+                playerA.replace(nextUrl);
+            }
         }
     };
 
@@ -506,6 +568,8 @@ export default function ListenScreen() {
                                     await savePlaybackRange(playbackRange);
                                     playbackRangeRef.current = playbackRange;
                                     setShowRangeModal(false);
+                                    // Automatically move to the new start point and play
+                                    await playAyah(playbackRange.startSurah, playbackRange.startAyah);
                                 }}
                                 style={styles.saveBtn}
                             >

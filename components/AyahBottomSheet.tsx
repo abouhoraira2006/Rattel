@@ -15,6 +15,7 @@ import {
     View
 } from 'react-native';
 
+
 interface Ayah {
     number: number;
     numberInSurah: number;
