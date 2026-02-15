@@ -4,7 +4,7 @@
     "slug": "Rattel",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/Rattil.png",
+    "icon": "./assets/images/Rattil (1).png",
     "scheme": "rattel",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -15,6 +15,7 @@
       "supportsTablet": true
     },
     "android": {
+      "icon": "./assets/images/Rattil (1).png",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -22,7 +23,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.rattel.app"
     },
     "web": {
       "output": "static",

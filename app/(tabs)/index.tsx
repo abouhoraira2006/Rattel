@@ -4,7 +4,7 @@ import { fetchSurahList, fetchSurahPage, getDailyAyah, normalizeArabic } from '@
 import { getLastRead, getReadingProgress, setLastRead } from '@/utils/storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { BookOpenCheck, Search, Sparkles, TrendingUp } from 'lucide-react-native';
+import { BookOpenCheck, Search, TrendingUp } from 'lucide-react-native';
 import { MotiView } from 'moti';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -54,7 +54,6 @@ export default function HomeScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [lastRead, setLastReadState] = useState<LastRead | null>(null);
     const [progress, setProgress] = useState(0);
-    const [dailyAyah, setDailyAyah] = useState<DailyAyah | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
     const filteredSurahs = useMemo(() => {
@@ -78,7 +77,6 @@ export default function HomeScreen() {
             setSurahs(surahList);
             setLastReadState(lastReadData || { surahNumber: 1, ayahNumber: 1 });
             setProgress(progressData);
-            setDailyAyah(ayah as any);
 
             // If no last read, set default to Al-Fatihah
             if (!lastReadData) {
@@ -142,38 +140,6 @@ export default function HomeScreen() {
 
     const Header = useMemo(() => (
         <View style={styles.header}>
-            {/* Daily Ayah Card */}
-            {dailyAyah && (
-                <MotiView
-                    from={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{
-                        type: 'timing',
-                        duration: 500,
-                    }}
-                >
-                    <View style={styles.dailyAyahCard}>
-                        <LinearGradient
-                            colors={['#D4AF37', '#C5A028']}
-                            style={styles.dailyGradient}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                        >
-                            <View style={styles.dailyHeader}>
-                                <Sparkles size={24} color={Colors.primary} strokeWidth={2} />
-                                <Text style={styles.dailyLabel}>آية اليوم</Text>
-                            </View>
-                            <Text style={styles.dailyAyahText} numberOfLines={3}>
-                                {dailyAyah.text}
-                            </Text>
-                            <Text style={styles.dailyReference}>
-                                {dailyAyah.surah.name} - {dailyAyah.numberInSurah}
-                            </Text>
-                        </LinearGradient>
-                    </View>
-                </MotiView>
-            )}
-
             {/* Continue Reading Card */}
             {lastRead && (
                 <MotiView
@@ -259,7 +225,7 @@ export default function HomeScreen() {
                 <Text style={styles.sectionSubtitle}>{filteredSurahs.length} سورة</Text>
             </View>
         </View>
-    ), [dailyAyah, lastRead, searchQuery, filteredSurahs.length, progress, surahs]);
+    ), [lastRead, searchQuery, filteredSurahs.length, progress, surahs]);
 
     if (loading) {
         return (

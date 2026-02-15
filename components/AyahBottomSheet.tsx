@@ -221,6 +221,9 @@ const AyahBottomSheet = forwardRef<BottomSheet, AyahBottomSheetProps>(
                                         <Text style={styles.tafsirText}>{tafsir}</Text>
                                     )}
                                 </View>
+
+                                {/* Extra space for better scrolling experience */}
+                                <View style={{ height: 100 }} />
                             </BottomSheetScrollView>
                         </>
                     ) : (
@@ -391,6 +394,7 @@ const styles = StyleSheet.create({
         textAlign: 'right',
         writingDirection: 'rtl',
         lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.base,
+        paddingBottom: Spacing.xl, // Robust padding for the last lines
     },
     loadingContainer: {
         height: 200,

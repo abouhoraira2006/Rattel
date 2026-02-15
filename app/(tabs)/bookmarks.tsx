@@ -1,9 +1,11 @@
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '@/constants/theme';
+import { getDailyAyah } from '@/services/api';
 import { getBookmarks, removeBookmark } from '@/utils/storage';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Book, BookmarkX } from 'lucide-react-native';
+import { Book, BookmarkX, Sparkles } from 'lucide-react-native';
 import { MotiView } from 'moti';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -12,6 +14,17 @@ import {
     Text,
     View,
 } from 'react-native';
+
+interface DailyAyah {
+    number: number;
+    text: string;
+    surah: {
+        number: number;
+        name: string;
+        englishName: string;
+    };
+    numberInSurah: number;
+}
 
 interface Bookmark {
     surahNumber: number;
@@ -24,17 +37,23 @@ interface Bookmark {
 export default function BookmarksScreen() {
     const router = useRouter();
     const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+    const [dailyAyah, setDailyAyah] = useState<DailyAyah | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const loadBookmarks = useCallback(async () => {
+    const loadData = useCallback(async () => {
         try {
             setLoading(true);
-            const data = await getBookmarks();
+            const [data, ayah] = await Promise.all([
+                getBookmarks(),
+                getDailyAyah()
+            ]);
+
             // Sort by most recent first
-            const sorted = data.sort((a, b) => b.timestamp - a.timestamp);
+            const sorted = data.sort((a: Bookmark, b: Bookmark) => b.timestamp - a.timestamp);
             setBookmarks(sorted);
+            setDailyAyah(ayah as any);
         } catch (error) {
-            console.error('Error loading bookmarks:', error);
+            console.error('Error loading data:', error);
         } finally {
             setLoading(false);
         }
@@ -42,13 +61,13 @@ export default function BookmarksScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            loadBookmarks();
-        }, [loadBookmarks])
+            loadData();
+        }, [loadData])
     );
 
     const handleRemoveBookmark = async (surahNumber: number, ayahNumber: number) => {
         await removeBookmark(surahNumber, ayahNumber);
-        await loadBookmarks();
+        await loadData();
     };
 
     const handleBookmarkPress = (bookmark: Bookmark) => {
@@ -103,6 +122,49 @@ export default function BookmarksScreen() {
         </MotiView>
     );
 
+    const ListHeader = useMemo(() => (
+        <View style={styles.headerContainer}>
+            <View style={styles.screenHeader}>
+                <Text style={styles.headerTitle}>المحفوظات</Text>
+                <Text style={styles.headerSubtitle}>
+                    {bookmarks.length} {bookmarks.length === 1 ? 'آية' : 'آيات'}
+                </Text>
+            </View>
+
+            {dailyAyah && (
+                <MotiView
+                    from={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ type: 'timing', duration: 600 }}
+                >
+                    <View style={styles.dailyAyahCard}>
+                        <LinearGradient
+                            colors={['#D4AF37', '#C5A028']}
+                            style={styles.dailyGradient}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                        >
+                            <View style={styles.dailyHeader}>
+                                <Sparkles size={20} color={Colors.primary} strokeWidth={2} />
+                                <Text style={styles.dailyLabel}>آية اليوم</Text>
+                            </View>
+                            <Text style={styles.dailyAyahText}>
+                                {dailyAyah.text}
+                            </Text>
+                            <Text style={styles.dailyReference}>
+                                {dailyAyah.surah.name} - {dailyAyah.numberInSurah}
+                            </Text>
+                        </LinearGradient>
+                    </View>
+                </MotiView>
+            )}
+
+            <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>آياتك المحفوظة</Text>
+            </View>
+        </View>
+    ), [bookmarks.length, dailyAyah]);
+
     const renderEmptyState = () => (
         <View style={styles.emptyContainer}>
             <View style={styles.emptyIcon}>
@@ -126,18 +188,12 @@ export default function BookmarksScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>المحفوظات</Text>
-                <Text style={styles.headerSubtitle}>
-                    {bookmarks.length} {bookmarks.length === 1 ? 'آية' : 'آيات'}
-                </Text>
-            </View>
-
             <FlatList
                 data={bookmarks}
                 renderItem={renderBookmark}
                 keyExtractor={(item) => `${item.surahNumber}-${item.ayahNumber}`}
                 contentContainerStyle={bookmarks.length === 0 ? styles.emptyList : styles.listContent}
+                ListHeaderComponent={ListHeader}
                 ListEmptyComponent={renderEmptyState}
                 showsVerticalScrollIndicator={false}
             />
@@ -162,12 +218,16 @@ const styles = StyleSheet.create({
         fontFamily: Typography.fontFamily.amiriRegular,
         color: Colors.text.secondary,
     },
-    header: {
+    headerContainer: {
+        marginBottom: Spacing.md,
+    },
+    screenHeader: {
         padding: Spacing.base,
         paddingTop: Spacing.lg,
         backgroundColor: Colors.surface,
         borderBottomWidth: 1,
         borderBottomColor: Colors.borderLight,
+        marginBottom: Spacing.base,
     },
     headerTitle: {
         fontSize: Typography.fontSize['3xl'],
@@ -180,6 +240,52 @@ const styles = StyleSheet.create({
         fontSize: Typography.fontSize.base,
         fontFamily: Typography.fontFamily.amiriRegular,
         color: Colors.text.secondary,
+        textAlign: 'right',
+    },
+    dailyAyahCard: {
+        marginHorizontal: Spacing.base,
+        borderRadius: BorderRadius['2xl'],
+        overflow: 'hidden',
+        ...Shadows.lg,
+        marginBottom: Spacing.lg,
+    },
+    dailyGradient: {
+        padding: Spacing.lg,
+    },
+    dailyHeader: {
+        flexDirection: 'row-reverse',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        marginBottom: Spacing.sm,
+    },
+    dailyLabel: {
+        fontSize: Typography.fontSize.base,
+        fontFamily: Typography.fontFamily.amiriBold,
+        color: '#8A6E1D',
+    },
+    dailyAyahText: {
+        fontSize: Typography.fontSize.lg,
+        fontFamily: Typography.fontFamily.amiriRegular,
+        color: '#1A1A1A',
+        textAlign: 'center',
+        writingDirection: 'rtl',
+        lineHeight: 32,
+        marginVertical: Spacing.sm,
+    },
+    dailyReference: {
+        fontSize: Typography.fontSize.xs,
+        fontFamily: Typography.fontFamily.amiriBold,
+        color: '#8A6E1D',
+        textAlign: 'left',
+    },
+    sectionHeader: {
+        paddingHorizontal: Spacing.base,
+        marginBottom: Spacing.sm,
+    },
+    sectionTitle: {
+        fontSize: Typography.fontSize.xl,
+        fontFamily: Typography.fontFamily.amiriBold,
+        color: Colors.primary,
         textAlign: 'right',
     },
     listContent: {

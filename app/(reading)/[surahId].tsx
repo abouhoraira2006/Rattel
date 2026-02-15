@@ -69,6 +69,7 @@ export default function ReadingScreen() {
     const isInitialScrollDoneRef = useRef(false);
     const initialPageRef = useRef(page ? parseInt(page as string) : 1);
     const processingPageRef = useRef<number | null>(null);
+    const lastScrollTimeRef = useRef(0);
     const loadPagesAroundRef = useRef<any>(null);
 
     // RTL handling for pages
@@ -84,6 +85,9 @@ export default function ReadingScreen() {
             setIsInitialScrollDone(false);
             isInitialScrollDoneRef.current = false;
             initialPageRef.current = initialPage;
+            // Initialize processingPageRef to the target page to prevent 
+            // the listener from treating the first render as a change.
+            processingPageRef.current = initialPage;
             setCurrentPage(initialPage);
 
             await loadPagesAround(initialPage);
@@ -96,15 +100,21 @@ export default function ReadingScreen() {
     useEffect(() => {
         if (!loading && pages.length > 0 && !isInitialScrollDoneRef.current) {
             const targetIndex = pages.findIndex(p => p.pageNumber === initialPageRef.current);
-            if (targetIndex !== -1) {
+            if (targetIndex !== -1 && targetIndex < pages.length) {
                 setTimeout(() => {
-                    flatListRef.current?.scrollToIndex({
-                        index: targetIndex,
-                        animated: false,
-                    });
-                    setIsInitialScrollDone(true);
-                    isInitialScrollDoneRef.current = true;
-                }, 100);
+                    try {
+                        lastScrollTimeRef.current = Date.now();
+                        flatListRef.current?.scrollToIndex({
+                            index: targetIndex,
+                            animated: false,
+                        });
+                        setIsInitialScrollDone(true);
+                        isInitialScrollDoneRef.current = true;
+                    } catch (error) {
+                        console.warn('Scroll failed, will retry via onScrollToIndexFailed:', error);
+                        // onScrollToIndexFailed will handle the retry
+                    }
+                }, 300); // Slightly more delay to ensure layout is ready
             }
         }
     }, [loading, pages]);
@@ -157,12 +167,17 @@ export default function ReadingScreen() {
     };
 
     const onViewableItemsChanged = useRef(({ viewableItems: vItems }: any) => {
+        // Guard against rapid scroll events and initial mounting noise
+        const now = Date.now();
+        if (now - lastScrollTimeRef.current < 500) return;
+
         if (vItems && vItems.length > 0 && isInitialScrollDoneRef.current) {
             const item = vItems[0].item;
             const newPage = item.pageNumber;
 
             if (processingPageRef.current === newPage) return;
             processingPageRef.current = newPage;
+            lastScrollTimeRef.current = now;
 
             // Important: Use direct state update for UI sync
             setCurrentPage(newPage);

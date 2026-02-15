@@ -17,13 +17,32 @@ export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
     }
 
     const [duration, setDuration] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
 
     useEffect(() => {
-        // Get duration when loaded
-        if (player?.duration) {
+        // Sync duration when available
+        if (player?.duration && player.duration !== duration) {
             setDuration(player.duration);
         }
-    }, [player?.duration]);
+
+        // Use a timer to poll for current time when playing
+        // We REMOVE player.currentTime from the dependency array to prevent infinite loops
+        let interval: any;
+
+        if (player?.playing) {
+            interval = setInterval(() => {
+                if (player) {
+                    setCurrentTime(player.currentTime);
+                }
+            }, 100); // 100ms for smooth updates like WhatsApp
+        } else {
+            setCurrentTime(player?.currentTime || 0);
+        }
+
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [player?.playing, player?.duration]);
 
     const handlePlayPause = () => {
         if (!player) return;
@@ -40,7 +59,6 @@ export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
-    const currentTime = player?.currentTime || 0;
     const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
     if (!player) {
@@ -70,7 +88,7 @@ export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
 
             <View style={styles.progressContainer}>
                 <View style={styles.timeContainer}>
-                    <Text style={styles.timeText}>{formatTime(player.currentTime)}</Text>
+                    <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
                     <Text style={styles.timeText}>{formatTime(duration)}</Text>
                 </View>
 
